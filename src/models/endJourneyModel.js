@@ -5,6 +5,7 @@ const endJourneySchema = new mongoose.Schema(
     Asset: { type: mongoose.Schema.Types.ObjectId, ref: "Asset", required: true },
     Journey_Type: { type: String, required: true },
     Occupancy: { type: Number, required: true },
+    hadSOS: { type: Boolean, default: false },
     endedAt: { type: Date, default: Date.now }, 
   },
   { timestamps: true }

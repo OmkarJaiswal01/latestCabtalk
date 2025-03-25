@@ -37,6 +37,8 @@ export const createSOS = asyncHandler(async (req, res) => {
         await activeJourney.save();
       } } }
   const sos = await SOS.create({ user_type, phone_no, sos_type, status: "pending", userDetails });
+  const io = req.app.get("io");
+  io.emit("newSOS", sos);
   res.status(201).json({ success: true, message: "SOS created successfully", sos });
 });
 
@@ -65,5 +67,7 @@ export const resolveSOS = asyncHandler(async (req, res) => {
   }
   sos.status = "resolved";
   await sos.save();
+  const io = req.app.get("io");
+  io.emit("sosResolved", sos);
   res.status(200).json({ success: true, message: "SOS resolved", sos });
 });

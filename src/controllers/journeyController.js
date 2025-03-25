@@ -1,4 +1,3 @@
-import mongoose from "mongoose";
 import Journey from "../models/JourneyModel.js";
 import Asset from "../models/assetModel.js";
 import Driver from "../models/driverModel.js";
@@ -59,6 +58,8 @@ export const updateOccupancyByDriver = asyncHandler(async (req, res) => {
   journey.boardedPassengers.push(passenger._id);
   await journey.save();
   await sendWhatsAppMessage(driverPhone, "Thank you, the status has been updated successfully🙂");
+  const io = req.app.get("io");
+  io.emit("journeyUpdated", journey);
   return res.status(200).json({ message: "Passenger status updated successfully.", journey });
 });
 
@@ -92,10 +93,10 @@ export const createJourney = async (req, res) => {
     await newJourney.save();
     asset.isActive = true;
     await asset.save();
+    const io = req.app.get("io");
+    io.emit("newJourney", newJourney);
     return res.status(201).json({
-      message: "Journey created successfully.",
-      newJourney,
-      updatedAsset: asset,
+      message: "Journey created successfully.", newJourney, updatedAsset: asset,
     });
   } catch (error) {
     return res.status(500).json({ message: "Server error", error: error.message });
@@ -114,78 +115,6 @@ export const getJourneys = async (req, res) => {
       return res.status(200).json([]);
     }
     return res.status(200).json(journeys);
-  } catch (error) {
-    return res.status(500).json({ message: "Server error", error: error.message });
-  }
-};
-
-export const getJourneyById = async (req, res) => {
-  try {
-    const { id } = req.params;
-    if (!mongoose.isValidObjectId(id)) {
-      return res.status(400).json({ message: "Invalid journey ID." });
-    }
-    const journey = await Journey.findById(id)
-      .populate("Driver")
-      .populate({
-        path: "Asset",
-        populate: { path: "passengers", model: "Passenger" },
-      });
-    if (!journey) {
-      return res.status(404).json({ message: "Journey not found." });
-    }
-    return res.status(200).json(journey);
-  } catch (error) {
-    return res.status(500).json({ message: "Server error", error: error.message });
-  }
-};
-
-export const updateJourney = async (req, res) => {
-  try {
-    const { id } = req.params;
-    if (!mongoose.isValidObjectId(id)) {
-      return res.status(400).json({ message: "Invalid journey ID." });
-    }
-    const updateData = req.body;
-    if (updateData.Driver && !mongoose.isValidObjectId(updateData.Driver)) {
-      return res.status(400).json({ message: "Invalid Driver ID." });
-    }
-    if (updateData.Asset && !mongoose.isValidObjectId(updateData.Asset)) {
-      return res.status(400).json({ message: "Invalid Asset ID." });
-    }
-    if (updateData.Occupancy !== undefined) {
-      const currentJourney = await Journey.findById(id).populate("Asset");
-      if (currentJourney.Asset.capacity && updateData.Occupancy > currentJourney.Asset.capacity) {
-        return res.status(400).json({ message: "Occupancy exceeds asset capacity." });
-      }
-    }
-    const updatedJourney = await Journey.findByIdAndUpdate(id, updateData, { new: true });
-    if (!updatedJourney) {
-      return res.status(404).json({ message: "Journey not found." });
-    }
-    return res.status(200).json(updatedJourney);
-  } catch (error) {
-    return res.status(500).json({ message: "Server error", error: error.message });
-  }
-};
-
-export const updateSOSStatus = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { SOS_Status } = req.body;
-    if (typeof SOS_Status !== "boolean") {
-      return res.status(400).json({ message: "SOS_Status must be a boolean value." });
-    }
-    if (!mongoose.isValidObjectId(id)) {
-      return res.status(400).json({ message: "Invalid journey ID." });
-    }
-    const journey = await Journey.findById(id);
-    if (!journey) {
-      return res.status(404).json({ message: "Journey not found." });
-    }
-    journey.SOS_Status = SOS_Status;
-    await journey.save();
-    return res.status(200).json({ message: "SOS status updated successfully.", journey });
   } catch (error) {
     return res.status(500).json({ message: "Server error", error: error.message });
   }

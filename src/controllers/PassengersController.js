@@ -10,7 +10,6 @@ export const insertPassenger = asyncHandler(async (req, res) => {
       message: 'Employee_ID, Employee_Name, Employee_PhoneNumber, Employee_ShiftTiming, Employee_Address and Service are required.',
     });
   }
-
   const newPassenger = new Passenger({
     Employee_ID: Employee_ID.toString().trim(),
     Employee_Name: Employee_Name.toString().trim(),
@@ -19,8 +18,9 @@ export const insertPassenger = asyncHandler(async (req, res) => {
     Employee_Address: Employee_Address ? Employee_Address.toString().trim() : '',
     Service: Service ? Service.toString().trim() : '',
   });
-  
   await newPassenger.save();
+  const io = req.app.get("io");
+  io.emit("newPassenger", newPassenger);
   res.status(201).json({ success: true, data: newPassenger });
 });
 

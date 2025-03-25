@@ -6,12 +6,10 @@ import { asyncHandler } from "../middlewares/asyncHandler.js";
 
 export const addAsset = asyncHandler(async (req, res) => {
   const { driverId, capacity, isActive } = req.body;
-
   if (!driverId || !mongoose.Types.ObjectId.isValid(driverId)) {
     return res.status(400).json({
       success: false, message: "Valid Driver ID is required.",
-    });
-  }
+    });}
   if (
     capacity === undefined || capacity === null || isNaN(capacity) || capacity <= 0
   ) {
@@ -22,15 +20,13 @@ export const addAsset = asyncHandler(async (req, res) => {
     return res.status(400).json({
       success: false,
       message: "isActive must be a boolean value.",
-    });
-  }
+    }); }
   const driver = await Driver.findById(driverId);
   if (!driver) {
     return res.status(404).json({
       success: false,
       message: "Driver not found.",
-    });
-  }
+    });}
   let asset = await Asset.findOne({ driver: driverId });
   if (asset) {
     if (asset.passengers.length > capacity) {
@@ -38,11 +34,14 @@ export const addAsset = asyncHandler(async (req, res) => {
         success: false,
         message:
           "New capacity cannot be less than the number of assigned passengers.",
-      });
-    }
+      }); }
     asset.capacity = capacity;
     if (isActive !== undefined) asset.isActive = isActive;
     await asset.save();
+
+    const io = req.app.get("io"); 
+    io.emit("assetUpdated", asset);
+
     return res.status(200).json({
       success: true,
       message:
@@ -56,6 +55,10 @@ export const addAsset = asyncHandler(async (req, res) => {
     passengers: [],
     isActive: isActive === true,
   });
+
+  const io = req.app.get("io");
+  io.emit("newAsset", asset);
+
   res.status(201).json({
     success: true,
     message: "Asset added successfully.",
@@ -124,6 +127,9 @@ export const addPassengerToAsset = asyncHandler(async (req, res) => {
     await passenger.save({ session });
     await session.commitTransaction();
     session.endSession();
+    const io = req.app.get("io");
+    io.emit("assetUpdated", asset);
+
     return res.status(200).json({
       success: true,
       message: "Passenger added to asset successfully.",
@@ -185,6 +191,8 @@ export const removePassengerFromAsset = asyncHandler(async (req, res) => {
     }
     await session.commitTransaction();
     session.endSession();
+    const io = req.app.get("io");
+    io.emit("assetUpdated", asset);
     return res.status(200).json({
       success: true,
       message: "Passenger removed from asset successfully.",
@@ -244,6 +252,9 @@ export const updateAsset = asyncHandler(async (req, res) => {
     asset.isActive = isActive;
   }
   await asset.save();
+  const io = req.app.get("io");
+  io.emit("assetUpdated", asset);
+
   return res.status(200).json({
     success: true,
     message: "Asset updated successfully.",
@@ -277,6 +288,9 @@ export const deleteAsset = asyncHandler(async (req, res) => {
     await asset.deleteOne({ session });
     await session.commitTransaction();
     session.endSession();
+    const io = req.app.get("io");
+    io.emit("assetDeleted", assetId);
+
     return res.status(200).json({
       success: true,
       message: "Asset deleted successfully.",

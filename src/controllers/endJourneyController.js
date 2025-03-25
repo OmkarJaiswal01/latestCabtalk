@@ -20,8 +20,7 @@ export const endJourney = async (req, res) => {
         .status(404)
         .json({
           message: "Driver with the provided vehicle number not found.",
-        });
-    }
+        });}
     const journey = await Journey.findOne({ Driver: driver._id }).session(
       session
     );
@@ -29,8 +28,7 @@ export const endJourney = async (req, res) => {
       await session.abortTransaction();
       return res
         .status(404)
-        .json({ message: "No active journey found for this vehicle." });
-    }
+        .json({ message: "No active journey found for this vehicle." }); }
     const existingEndedJourney = await EndJourney.findOne({
       JourneyId: journey._id,
     }).session(session);
@@ -46,6 +44,7 @@ export const endJourney = async (req, res) => {
       Asset: journey.Asset,
       Journey_Type: journey.Journey_Type,
       Occupancy: journey.Occupancy,
+      hadSOS: journey.SOS_Status,
     });
     await endedJourney.save({ session });
     await Journey.findByIdAndDelete(journey._id, { session });
@@ -57,6 +56,8 @@ export const endJourney = async (req, res) => {
     updatedAsset.isActive = false;
     await updatedAsset.save({ session });
     await session.commitTransaction();
+    const io = req.app.get("io");
+    io.emit("journeyEnded", endedJourney);
     return res.status(200).json({
       message: "Journey ended successfully.",
       endedJourney,
@@ -90,6 +91,7 @@ export const getEndedJourneys = async (req, res) => {
         vehicleNumber: journey.Driver?.vehicleNumber || "Unknown",
         Journey_Type: journey.Journey_Type,
         Occupancy: journey.Occupancy,
+        hadSOS: journey.hadSOS,
         endedAt: journey.endedAt,
       })),
     });
