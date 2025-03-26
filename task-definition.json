@@ -8,7 +8,7 @@
 
     "cpu": "1024",
 
-    "memory": "4096",
+    "memory": "3072",
 
     "requiresCompatibilities": [
 
@@ -22,9 +22,9 @@
 
             "name": "gxi-cab-portal-backend-container",
 
-            "image": "public.ecr.aws/l9d5n3q7/gxi-cab-portal-backend:18",
+            "image": "public.ecr.aws/l9d5n3q7/gxi-cab-portal-backend:19",
 
-            "cpu": 1024,
+            "cpu": 0,
 
             "essential": true,
 
