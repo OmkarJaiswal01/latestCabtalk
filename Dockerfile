@@ -14,7 +14,7 @@ RUN npm install
 COPY . .  
 
 # Expose necessary ports
-EXPOSE 5000
+EXPOSE 5002
 EXPOSE 80
 EXPOSE 587
 
