@@ -22,7 +22,7 @@
 
             "name": "gxi-cab-portal-backend-container",
 
-            "image": "public.ecr.aws/l9d5n3q7/gxi-cab-portal-backend:4",
+            "image": "public.ecr.aws/l9d5n3q7/gxi-cab-portal-backend:17",
 
             "cpu": 1024,
 
