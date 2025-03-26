@@ -10,7 +10,7 @@
     "containerDefinitions": [
         {
             "name": "gxi-cab-portal-backend-container",
-            "image": "public.ecr.aws/l9d5n3q7/gxi-cab-portal-backend:25",
+            "image": "public.ecr.aws/l9d5n3q7/gxi-cab-portal-backend:26",
             "cpu": 0,
             "essential": true,
             "portMappings": [
