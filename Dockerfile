@@ -34,5 +34,5 @@ EXPOSE 587
  
 # Start the application
 
-CMD ["node", "app.js"]
+CMD ["node", "src/index.js"]
  
