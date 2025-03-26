@@ -15,9 +15,9 @@
             "essential": true,
             "portMappings": [
                 {
-                    "name": "gxi-cab-portal-backend-container-5000-tcp",
-                    "containerPort": 5000,
-                    "hostPort": 5000,
+                    "name": "gxi-cab-portal-backend-container-5002-tcp",
+                    "containerPort": 5002,
+                    "hostPort": 5002,
                     "protocol": "tcp",
                     "appProtocol": "http"
                 }
