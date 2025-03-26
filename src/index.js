@@ -48,8 +48,8 @@ mongoose
   .connect(MONGO_URI)
   .then((connection) => {
     console.log(`MongoDB connected on host: ${connection.connection.host}`);
-    server.listen(5000, "0.0.0.0", () => {
-      console.log(`🚀 Server is running at port: 5000`);
+    server.listen(5002, "0.0.0.0", () => {
+      console.log(`🚀 Server is running at port: 5002`);
     });
   })
   .catch((error) => {
