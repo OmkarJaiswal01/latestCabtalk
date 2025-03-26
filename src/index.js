@@ -1,4 +1,3 @@
-import dotenv from "dotenv";
 import express from "express";
 import http from "http";
 import mongoose from "mongoose";
@@ -12,12 +11,11 @@ import journeyRoutes from "./routes/journeyRoutes.js";
 import endJourneyRoutes from "./routes/endJourneyRoutes.js";
 import sosRoutes from "./routes/sosRoutes.js";
 
-dotenv.config();
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: "*", methods: ["GET", "POST"],
-  },});
+  cors: { origin: "*", methods: ["GET", "POST"] },
+});
 
 app.use(cors({ origin: "*", credentials: true }));
 app.use(express.json({ limit: "16kb" }));
@@ -34,7 +32,8 @@ io.on("connection", (socket) => {
   console.log(`Client connected: ${socket.id}`);
   socket.on("disconnect", () => {
     console.log(`Client disconnected: ${socket.id}`);
-  });});
+  });
+});
 app.set("io", io);
 
 app.use((err, req, res, next) => {
@@ -42,10 +41,18 @@ app.use((err, req, res, next) => {
   res.status(500).json({ success: false, message: "Internal Server Error" });
 });
 
-mongoose.connect("mongodb+srv://vivekverma:vivekvermagxi@gxi.gus9m.mongodb.net/cabDB").then((connection) => {
+// Use a hardcoded MongoDB URI (or connect to a Docker MongoDB container)
+const MONGO_URI = "mongodb+srv://vivekverma:vivekvermagxi@gxi.gus9m.mongodb.net/cabDB";
+
+mongoose
+  .connect(MONGO_URI)
+  .then((connection) => {
     console.log(`MongoDB connected on host: ${connection.connection.host}`);
-    server.listen(5000, () => {
+    server.listen(5000, "0.0.0.0", () => {
       console.log(`🚀 Server is running at port: 5000`);
     });
-  }).catch((error) => {
-    console.error("MongoDB connection failed:", error);  process.exit(1); });
+  })
+  .catch((error) => {
+    console.error("MongoDB connection failed:", error);
+    process.exit(1);
+  });
