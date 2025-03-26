@@ -42,7 +42,7 @@ app.use((err, req, res, next) => {
   res.status(500).json({ success: false, message: "Internal Server Error" });
 });
 
-mongoose.connect("mongodb+srv://vivekverma:vivekvermagxi@gxi.gus9m.mongodb.net/cabDB?retryWrites=true&w=majority").then((connection) => {
+mongoose.connect("mongodb+srv://vivekverma:vivekvermagxi@gxi.gus9m.mongodb.net/cabDB").then((connection) => {
     console.log(`MongoDB connected on host: ${connection.connection.host}`);
     server.listen(5000, () => {
       console.log(`🚀 Server is running at port: 5000`);
