@@ -41,7 +41,6 @@ app.use((err, req, res, next) => {
   res.status(500).json({ success: false, message: "Internal Server Error" });
 });
 
-// Use a hardcoded MongoDB URI (or connect to a Docker MongoDB container)
 const MONGO_URI = "mongodb+srv://vivekverma:vivekvermagxi@gxi.gus9m.mongodb.net/cabDB";
 
 mongoose
