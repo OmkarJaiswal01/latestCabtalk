@@ -7,6 +7,7 @@ const journeySchema = new mongoose.Schema(
     Occupancy: {  type: Number,  required: true  },
     SOS_Status: {  type: Boolean,  default: false  },
     boardedPassengers: {  type: [{ type: mongoose.Schema.Types.ObjectId, ref: "Passenger" }],  default: []  },
+    processedWebhookEvents: { type: [String], default: [] },
   }, { timestamps: true }
 );
 export default mongoose.model("Journey", journeySchema);

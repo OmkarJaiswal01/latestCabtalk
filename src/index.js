@@ -10,14 +10,23 @@ import assetRoutes from "./routes/assetRoutes.js";
 import journeyRoutes from "./routes/journeyRoutes.js";
 import endJourneyRoutes from "./routes/endJourneyRoutes.js";
 import sosRoutes from "./routes/sosRoutes.js";
+import passengerListRoutes from "./routes/passengerListRoutes.js";
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: { origin: "*", methods: ["GET", "POST"] },
-});
+const corsOptions = {
+  origin: [
+    "https://dashboard-cab.vercel.app",
+    "http://localhost:5172",
+    "http://localhost:5173"
+  ],
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  credentials: true,
+};
 
-app.use(cors({ origin: "*", credentials: true }));
+const io = new Server(server, { cors: corsOptions });
+app.use(cors(corsOptions));
+
 app.use(express.json({ limit: "16kb" }));
 app.use(express.urlencoded({ extended: true, limit: "16kb" }));
 app.use(cookieParser());
@@ -27,6 +36,7 @@ app.use("/api/v1/drivers", driverRoutes);
 app.use("/api/v1/assets", assetRoutes);
 app.use("/api/v1", journeyRoutes);
 app.use("/api/v1", endJourneyRoutes);
+app.use("/api/v1/pass", passengerListRoutes);
 
 io.on("connection", (socket) => {
   console.log(`Client connected: ${socket.id}`);
@@ -43,9 +53,7 @@ app.use((err, req, res, next) => {
 
 const MONGO_URI = "mongodb+srv://vivekverma:vivekvermagxi@gxi.gus9m.mongodb.net/cabDB";
 
-mongoose
-  .connect(MONGO_URI)
-  .then((connection) => {
+mongoose.connect(MONGO_URI).then((connection) => {
     console.log(`MongoDB connected on host: ${connection.connection.host}`);
     server.listen(5002, "0.0.0.0", () => {
       console.log(`🚀 Server is running at port: 5002`);
