@@ -32,9 +32,16 @@ export const addDriver = asyncHandler(async (req, res) => {
 export const getAllDrivers = asyncHandler(async (req, res) => {
   const drivers = await Driver.find();
   if (drivers.length === 0) {
-    return res.status(404).json({
-      success: false, message: "No drivers found.",
-    }); }
+    return res.status(200).json({
+      success: true,
+      message: "No drivers found.",
+      drivers: []
+    });
+  }
   return res.status(200).json({
-    success: true, message: "Drivers retrieved successfully.", drivers,
-  }); });
+    success: true,
+    message: "Drivers retrieved successfully.",
+    drivers,
+  });
+});
+
