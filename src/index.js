@@ -17,7 +17,7 @@ const server = http.createServer(app);
 const corsOptions = {
   origin: [
     "https://dashboard-cab.vercel.app",
-    "http://localhost:5172",
+    "http://gxi-cab-portal-frontend.s3-website-us-east-1.amazonaws.com",
     "http://localhost:5173"
   ],
   methods: ["GET", "POST", "PUT", "DELETE"],
