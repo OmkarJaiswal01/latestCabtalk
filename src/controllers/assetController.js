@@ -3,16 +3,36 @@ import Asset from "../models/assetModel.js";
 import Driver from "../models/driverModel.js";
 import Passenger from "../models/Passenger.js";
 import { asyncHandler } from "../middlewares/asyncHandler.js";
+import axios from "axios";
 
+const updateDriverWatiStatus = async (phoneNumber) => {
+  const url = `https://live-mt-server.wati.io/388428/api/v1/updateContactAttributes/${phoneNumber}`;
+  const payload = {
+    customParams: [
+      {
+        name: "active_Driver",
+        value: "true",
+      },
+    ],
+  };
+  try {
+    const response = await axios.post(url, payload, {
+      headers: {
+        "content-type": "application/json-patch+json",
+        Authorization: `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI5MzAwNGExMi04OWZlLTQxN2MtODBiNy0zMTljMjY2ZjliNjUiLCJ1bmlxdWVfbmFtZSI6ImhhcmkudHJpcGF0aGlAZ3hpbmV0d29ya3MuY29tIiwibmFtZWlkIjoiaGFyaS50cmlwYXRoaUBneGluZXR3b3Jrcy5jb20iLCJlbWFpbCI6ImhhcmkudHJpcGF0aGlAZ3hpbmV0d29ya3MuY29tIiwiYXV0aF90aW1lIjoiMDIvMDEvMjAyNSAwODozNDo0MCIsInRlbmFudF9pZCI6IjM4ODQyOCIsImRiX25hbWUiOiJtdC1wcm9kLVRlbmFudHMiLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOiJBRE1JTklTVFJBVE9SIiwiZXhwIjoyNTM0MDIzMDA4MDAsImlzcyI6IkNsYXJlX0FJIiwiYXVkIjoiQ2xhcmVfQUkifQ.tvRl-g9OGF3kOq6FQ-PPdRtfVrr4BkfxrRKoHc7tbC0`,
+      },
+    });
+  } catch (error) {
+    console.error("Error updating WATI driver attribute:", error.message);
+  }
+};
 export const addAsset = asyncHandler(async (req, res) => {
   const { driverId, capacity, isActive } = req.body;
   if (!driverId || !mongoose.Types.ObjectId.isValid(driverId)) {
     return res.status(400).json({
       success: false, message: "Valid Driver ID is required.",
     });}
-  if (
-    capacity === undefined || capacity === null || isNaN(capacity) || capacity <= 0
-  ) {
+  if (capacity === undefined || capacity === null || isNaN(capacity) || capacity <= 0) {
     return res.status(400).json({
       success: false, message: "Capacity must be a positive number.", });
   }
@@ -26,26 +46,24 @@ export const addAsset = asyncHandler(async (req, res) => {
     return res.status(404).json({
       success: false,
       message: "Driver not found.",
-    });}
+    }); }
   let asset = await Asset.findOne({ driver: driverId });
   if (asset) {
     if (asset.passengers.length > capacity) {
       return res.status(400).json({
-        success: false,
-        message:
-          "New capacity cannot be less than the number of assigned passengers.",
-      }); }
+        success: false, message: "New capacity cannot be less than the number of assigned passengers.", }); }
     asset.capacity = capacity;
     if (isActive !== undefined) asset.isActive = isActive;
     await asset.save();
 
-    const io = req.app.get("io"); 
+    const io = req.app.get("io");
     io.emit("assetUpdated", asset);
+
+    await updateDriverWatiStatus(driver.phoneNumber);
 
     return res.status(200).json({
       success: true,
-      message:
-        "Asset already exists for this driver. Updated asset capacity successfully.",
+      message: "Asset already exists for this driver. Updated asset capacity successfully.",
       asset,
     });
   }
@@ -58,6 +76,8 @@ export const addAsset = asyncHandler(async (req, res) => {
 
   const io = req.app.get("io");
   io.emit("newAsset", asset);
+
+  await updateDriverWatiStatus(driver.phoneNumber);
 
   res.status(201).json({
     success: true,
