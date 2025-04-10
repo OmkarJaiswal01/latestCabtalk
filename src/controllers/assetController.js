@@ -5,18 +5,18 @@ import Passenger from "../models/Passenger.js";
 import { asyncHandler } from "../middlewares/asyncHandler.js";
 import axios from "axios";
 
-const updateDriverWatiStatus = async (phoneNumber) => {
+const updateDriverWatiStatus = async (phoneNumber, activeDriver = true) => {
   const url = `https://live-mt-server.wati.io/388428/api/v1/updateContactAttributes/${phoneNumber}`;
   const payload = {
     customParams: [
       {
         name: "active_Driver",
-        value: "true",
+        value: activeDriver ? "true" : "false",
       },
     ],
   };
   try {
-    const response = await axios.post(url, payload, {
+    await axios.post(url, payload, {
       headers: {
         "content-type": "application/json-patch+json",
         Authorization: `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI5MzAwNGExMi04OWZlLTQxN2MtODBiNy0zMTljMjY2ZjliNjUiLCJ1bmlxdWVfbmFtZSI6ImhhcmkudHJpcGF0aGlAZ3hpbmV0d29ya3MuY29tIiwibmFtZWlkIjoiaGFyaS50cmlwYXRoaUBneGluZXR3b3Jrcy5jb20iLCJlbWFpbCI6ImhhcmkudHJpcGF0aGlAZ3hpbmV0d29ya3MuY29tIiwiYXV0aF90aW1lIjoiMDIvMDEvMjAyNSAwODozNDo0MCIsInRlbmFudF9pZCI6IjM4ODQyOCIsImRiX25hbWUiOiJtdC1wcm9kLVRlbmFudHMiLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOiJBRE1JTklTVFJBVE9SIiwiZXhwIjoyNTM0MDIzMDA4MDAsImlzcyI6IkNsYXJlX0FJIiwiYXVkIjoiQ2xhcmVfQUkifQ.tvRl-g9OGF3kOq6FQ-PPdRtfVrr4BkfxrRKoHc7tbC0`,
@@ -26,32 +26,39 @@ const updateDriverWatiStatus = async (phoneNumber) => {
     console.error("Error updating WATI driver attribute:", error.message);
   }
 };
+
 export const addAsset = asyncHandler(async (req, res) => {
   const { driverId, capacity, isActive } = req.body;
   if (!driverId || !mongoose.Types.ObjectId.isValid(driverId)) {
     return res.status(400).json({
       success: false, message: "Valid Driver ID is required.",
-    });}
+    });
+  }
   if (capacity === undefined || capacity === null || isNaN(capacity) || capacity <= 0) {
     return res.status(400).json({
-      success: false, message: "Capacity must be a positive number.", });
+      success: false, message: "Capacity must be a positive number.",
+    });
   }
   if (isActive !== undefined && typeof isActive !== "boolean") {
     return res.status(400).json({
       success: false,
       message: "isActive must be a boolean value.",
-    }); }
+    });
+  }
   const driver = await Driver.findById(driverId);
   if (!driver) {
     return res.status(404).json({
       success: false,
       message: "Driver not found.",
-    }); }
+    });
+  }
   let asset = await Asset.findOne({ driver: driverId });
   if (asset) {
     if (asset.passengers.length > capacity) {
       return res.status(400).json({
-        success: false, message: "New capacity cannot be less than the number of assigned passengers.", }); }
+        success: false, message: "New capacity cannot be less than the number of assigned passengers.",
+      });
+    }
     asset.capacity = capacity;
     if (isActive !== undefined) asset.isActive = isActive;
     await asset.save();
@@ -59,7 +66,7 @@ export const addAsset = asyncHandler(async (req, res) => {
     const io = req.app.get("io");
     io.emit("assetUpdated", asset);
 
-    await updateDriverWatiStatus(driver.phoneNumber);
+    await updateDriverWatiStatus(driver.phoneNumber, true);
 
     return res.status(200).json({
       success: true,
@@ -77,7 +84,7 @@ export const addAsset = asyncHandler(async (req, res) => {
   const io = req.app.get("io");
   io.emit("newAsset", asset);
 
-  await updateDriverWatiStatus(driver.phoneNumber);
+  await updateDriverWatiStatus(driver.phoneNumber, true);
 
   res.status(201).json({
     success: true,
@@ -85,6 +92,7 @@ export const addAsset = asyncHandler(async (req, res) => {
     asset,
   });
 });
+
 export const getAllAssets = asyncHandler(async (req, res) => {
   const assets = await Asset.find()
     .populate("driver", "name vehicleNumber")
@@ -95,6 +103,7 @@ export const getAllAssets = asyncHandler(async (req, res) => {
     assets,
   });
 });
+
 export const addPassengerToAsset = asyncHandler(async (req, res) => {
   const { passengerId } = req.body;
   const { id: assetId } = req.params;
@@ -162,7 +171,10 @@ export const addPassengerToAsset = asyncHandler(async (req, res) => {
       success: false,
       message: "Error adding passenger to asset.",
       error: error.message,
-    });}});
+    });
+  }
+});
+
 export const removePassengerFromAsset = asyncHandler(async (req, res) => {
   const { passengerId } = req.body;
   const { id: assetId } = req.params;
@@ -172,12 +184,12 @@ export const removePassengerFromAsset = asyncHandler(async (req, res) => {
       message: "Valid Asset ID is required in URL parameters.",
     });
   }
-
   if (!passengerId || !mongoose.Types.ObjectId.isValid(passengerId)) {
     return res.status(400).json({
       success: false,
       message: "Valid Passenger ID is required in request body.",
-    });}
+    });
+  }
   const asset = await Asset.findById(assetId);
   if (!asset) {
     return res.status(404).json({
@@ -228,6 +240,7 @@ export const removePassengerFromAsset = asyncHandler(async (req, res) => {
     });
   }
 });
+
 export const updateAsset = asyncHandler(async (req, res) => {
   const { capacity, isActive } = req.body;
   const { id: assetId } = req.params;
@@ -308,6 +321,10 @@ export const deleteAsset = asyncHandler(async (req, res) => {
     await asset.deleteOne({ session });
     await session.commitTransaction();
     session.endSession();
+    const driver = await Driver.findById(asset.driver);
+    if (driver) {
+      await updateDriverWatiStatus(driver.phoneNumber, false);
+    }
     const io = req.app.get("io");
     io.emit("assetDeleted", assetId);
 
