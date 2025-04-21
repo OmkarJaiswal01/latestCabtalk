@@ -1,5 +1,5 @@
 import express from "express";
-import http from "http";
+import https from "https";
 import mongoose from "mongoose";
 import cors from "cors";
 import cookieParser from "cookie-parser";
@@ -13,12 +13,11 @@ import sosRoutes from "./routes/sosRoutes.js";
 import passengerListRoutes from "./routes/passengerListRoutes.js";
 
 const app = express();
-const server = http.createServer(app);
+const server = https.createServer(app);
 const corsOptions = {
   origin: [
     "https://dashboard-cab.vercel.app",
-    "https://cabtalk.globalxperts.net.in",
-    "http://localhost:5173"
+    "https://cabtalk.globalxperts.net.in"
   ],
   methods: ["GET", "POST", "PUT", "DELETE"],
   credentials: true,
