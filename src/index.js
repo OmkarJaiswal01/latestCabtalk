@@ -19,7 +19,8 @@ const server = http.createServer(app);
 const corsOptions = {
   origin: [
     "https://dashboard-cab.vercel.app",
-    "https://cabtalk.globalxperts.net.in",
+    // "https://cabtalk.globalxperts.net.in",
+    "https://cabtalk.gxinetworks.in",
     "http://localhost:5173",
   ],
   methods: ["GET", "POST", "PUT", "DELETE"],
