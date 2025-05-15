@@ -102,12 +102,13 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
     const passengerDetails = listReply.title || "";
     const match = passengerDetails.match(/\d{10,}/);
     if (!match) {
+      await sendWhatsAppMessage(waId, "⚠️ Passenger details not found. Please verify and retry.");
       return res.status(200).json({ message: "Invalid passenger details in listReply." });
     }
     const passengerPhone = match[0];
     const passenger = await Passenger.findOne({ Employee_PhoneNumber: passengerPhone });
     if (!passenger) {
-      await sendWhatsAppMessage( waId, "⚠️ Passenger details not found. Please verify and retry.");
+      await sendWhatsAppMessage(waId, "⚠️ Passenger details not found. Please verify and retry.");
       return res.status(200).json({ message: "Passenger not found." });
     }
     const isAssigned = journey.Asset.passengers.some(
@@ -118,27 +119,32 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
       return res.status(200).json({ message: "Passenger not assigned to this vehicle." });
     }
     if (journey.Occupancy + 1 > journey.Asset.capacity) {
-       await sendWhatsAppMessage(waId, "⚠️ Cannot board. Vehicle at full capacity.");
+      await sendWhatsAppMessage(waId, "⚠️ Cannot board. Vehicle at full capacity.");
       return res.status(200).json({ message: "Vehicle at full capacity." });
     }
-    const already = journey.boardedPassengers.some(
-      (evt) => evt.passenger.toString() === passenger._id.toString()
-    );
+    const already = journey.boardedPassengers.some(evt => {
+      const boardedId = (evt.passenger._id || evt.passenger).toString();
+      return boardedId === passenger._id.toString();
+    });
     if (already) {
       await sendWhatsAppMessage(waId, "✅ Passenger already boarded.");
       return res.status(200).json({ message: "Passenger already boarded." });
     }
     journey.Occupancy += 1;
-    journey.boardedPassengers.push({passenger: passenger._id, boardedAt:  new Date() });
+    journey.boardedPassengers.push({ passenger: passenger._id, boardedAt: new Date() });
     journey.processedWebhookEvents.push(eventId);
     await journey.save();
     if (req.app.get("io")) {
       req.app.get("io").emit("journeyUpdated", journey);
     }
-    await sendWhatsAppMessage(waId, "✅ Passenger confirmed. Thank you! 🚖" );
-    const updated = await Journey.findById(journey._id).populate("boardedPassengers.passenger", "name Employee_PhoneNumber");
-    return res.status(200).json({ message: "Journey updated successfully.", boardingEvents: updated.boardedPassengers.map((evt) => ({
-        passenger: evt.passenger, boardedAt: evt.boardedAt
+    await sendWhatsAppMessage(waId, "✅ Passenger confirmed. Thank you!");
+    const updated = await Journey.findById(journey._id)
+      .populate("boardedPassengers.passenger", "name Employee_PhoneNumber");
+    return res.status(200).json({
+      message: "Journey updated successfully.",
+      boardingEvents: updated.boardedPassengers.map(evt => ({
+        passenger: evt.passenger,
+        boardedAt: evt.boardedAt
       }))
     });
   } catch (error) {
