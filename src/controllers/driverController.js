@@ -1,6 +1,6 @@
 import Driver from "../models/driverModel.js";
 import { asyncHandler } from "../middlewares/asyncHandler.js";
-
+ 
 export const addDriver = asyncHandler(async (req, res) => {
   const { name, phoneNumber, vehicleNumber, licenseImage } = req.body;
   if (!name || !phoneNumber || !vehicleNumber || !licenseImage) {
@@ -28,7 +28,7 @@ export const addDriver = asyncHandler(async (req, res) => {
       success: false, message: "An error occurred while processing the request.",
     });
   }});
-
+ 
 export const getAllDrivers = asyncHandler(async (req, res) => {
   const drivers = await Driver.find();
   if (drivers.length === 0) {
@@ -44,4 +44,39 @@ export const getAllDrivers = asyncHandler(async (req, res) => {
     drivers,
   });
 });
-
+export const updateDriver = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { name, phoneNumber, vehicleNumber } = req.body;
+  if (!name || !phoneNumber || !vehicleNumber) {
+    return res.status(400).json({
+      success: false,
+      message: "Fields name, phoneNumber, and vehicleNumber are required.",
+    });
+  }
+  try {
+    const driver = await Driver.findById(id);
+    if (!driver) {
+      return res.status(404).json({
+        success: false,
+        message: "Driver not found.",
+      });
+    }
+    driver.name = name;
+    driver.phoneNumber = phoneNumber;
+    driver.vehicleNumber = vehicleNumber;
+    await driver.save();
+    const io = req.app.get("io");
+    io.emit("driverUpdated", driver);
+    return res.status(200).json({
+      success: true,
+      message: "Driver updated successfully.",
+      driver,
+    });
+  } catch (error) {
+    console.error("Error updating driver:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "An error occurred while updating the driver.",
+    });
+  }
+});

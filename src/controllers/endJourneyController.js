@@ -16,27 +16,17 @@ export const endJourney = async (req, res) => {
     const driver = await Driver.findOne({ vehicleNumber }).session(session);
     if (!driver) {
       await session.abortTransaction();
-      return res
-        .status(404)
-        .json({
-          message: "Driver with the provided vehicle number not found.",
-        });}
-    const journey = await Journey.findOne({ Driver: driver._id }).session(
-      session
-    );
+      return res.status(404).json({ message: "Driver not found." });
+    }
+    const journey = await Journey.findOne({ Driver: driver._id }).session(session);
     if (!journey) {
       await session.abortTransaction();
-      return res
-        .status(404)
-        .json({ message: "No active journey found for this vehicle." }); }
-    const existingEndedJourney = await EndJourney.findOne({
-      JourneyId: journey._id,
-    }).session(session);
-    if (existingEndedJourney) {
+      return res.status(404).json({ message: "No active journey found." });
+    }
+    const alreadyEnded = await EndJourney.findOne({ JourneyId: journey._id }).session(session);
+    if (alreadyEnded) {
       await session.abortTransaction();
-      return res
-        .status(400)
-        .json({ message: "Journey has already been ended." });
+      return res.status(400).json({ message: "Journey has already been ended." });
     }
     const endedJourney = new EndJourney({
       JourneyId: journey._id,
@@ -45,28 +35,32 @@ export const endJourney = async (req, res) => {
       Journey_Type: journey.Journey_Type,
       Occupancy: journey.Occupancy,
       hadSOS: journey.SOS_Status,
+      startedAt: journey.createdAt,
+      boardedPassengers: journey.boardedPassengers.map(evt => ({
+        passenger: evt.passenger,
+        boardedAt: evt.boardedAt
+      })),
+      processedWebhookEvents: journey.processedWebhookEvents
     });
     await endedJourney.save({ session });
     await Journey.findByIdAndDelete(journey._id, { session });
-    const updatedAsset = await Asset.findById(journey.Asset).session(session);
-    if (!updatedAsset) {
+    const asset = await Asset.findById(journey.Asset).session(session);
+    if (!asset) {
       await session.abortTransaction();
       return res.status(404).json({ message: "Associated asset not found." });
     }
-    updatedAsset.isActive = false;
-    await updatedAsset.save({ session });
+    asset.isActive = false;
+    await asset.save({ session });
     await session.commitTransaction();
     const io = req.app.get("io");
-    io.emit("journeyEnded", endedJourney);
+    io?.emit("journeyEnded", endedJourney);
     return res.status(200).json({
       message: "Journey ended successfully.",
-      endedJourney,
+      endedJourney
     });
   } catch (error) {
     await session.abortTransaction();
-    return res
-      .status(500)
-      .json({ message: "Server error", error: error.message });
+    return res.status(500).json({ message: "Server error", error: error.message });
   } finally {
     session.endSession();
   }
@@ -77,23 +71,29 @@ export const getEndedJourneys = async (req, res) => {
     let { date } = req.query;
     if (!date) {
       const istNow = new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
-      date = new Date(istNow).toISOString().split("T")[0]; }
-    const startOfDayIST = new Date(`${date}T00:00:00.000Z`);
-    const endOfDayIST = new Date(`${date}T23:59:59.999Z`);
+      date = new Date(istNow).toISOString().split("T")[0];
+    }
+    const startOfDay = new Date(`${date}T00:00:00.000Z`);
+    const endOfDay   = new Date(`${date}T23:59:59.999Z`);
     const endedJourneys = await EndJourney.find({
-      endedAt: { $gte: startOfDayIST, $lt: endOfDayIST }
+      endedAt: { $gte: startOfDay, $lt: endOfDay }
     })
-      .populate({ path: "Driver", select: "vehicleNumber" })
+      .populate({ path: "Driver", select: "vehicleNumber name" })
+      .populate({ path: "Asset", select: "identifierOrName" })
       .sort({ endedAt: -1 });
+    const data = endedJourneys.map(j => ({
+      shortId: j.shortId,
+      vehicleNumber: j.Driver?.vehicleNumber || "Unknown",
+      Journey_Type: j.Journey_Type,
+      Occupancy: j.Occupancy,
+      hadSOS: j.hadSOS,
+      startedAt: j.startedAt,
+      endedAt: j.endedAt,
+      boardedCount: j.boardedPassengers.length
+    }));
     return res.status(200).json({
       message: "Ended journeys retrieved successfully.",
-      data: endedJourneys.map(journey => ({
-        vehicleNumber: journey.Driver?.vehicleNumber || "Unknown",
-        Journey_Type: journey.Journey_Type,
-        Occupancy: journey.Occupancy,
-        hadSOS: journey.hadSOS,
-        endedAt: journey.endedAt,
-      })),
+      data
     });
   } catch (error) {
     return res.status(500).json({ message: "Server error", error: error.message });

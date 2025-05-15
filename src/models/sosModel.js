@@ -1,16 +1,26 @@
 import mongoose from "mongoose";
+import { getNextSequence } from "./counterModel.js";
 const sosSchema = new mongoose.Schema(
   {
-    user_type: { type: String, enum: ["Driver", "Passenger"], required: true },
-    phone_no: { type: String, required: true },
-    sos_type: { type: String, required: true },
-    status: { type: String, enum: ["pending", "resolved"], default: "pending" },
+    shortId:     { type: String, unique: true },
+    user_type:   { type: String, enum: ["Driver", "Passenger"], required: true },
+    phone_no:    { type: String, required: true },
+    sos_type:    { type: String, required: true },
+    status:      { type: String, enum: ["pending", "resolved"], default: "pending" },
+    asset:       { type: mongoose.Schema.Types.ObjectId, ref: "Asset", required: true },
+    newAsset:    { type: mongoose.Schema.Types.ObjectId, ref: "Asset" },
     userDetails: {
-      name: { type: String, default: "" },
-      vehicle_no: { type: String, default: "" },
-      assetId: { type: mongoose.Schema.Types.ObjectId, ref: "Asset", default: null }
-    } },
+      name:       { type: String, default: "" },
+      vehicle_no: { type: String, default: "" }
+    }
+  },
   { timestamps: true }
 );
-const SOS = mongoose.model("SOS", sosSchema);
-export default SOS;
+sosSchema.pre("save", async function (next) {
+  if (!this.shortId) {
+    const seq = await getNextSequence("SOS");
+    this.shortId = `SOS-${String(seq).padStart(3, "0")}`;
+  }
+  next();
+});
+export default mongoose.model("SOS", sosSchema);
