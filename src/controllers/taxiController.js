@@ -1,5 +1,6 @@
 import Taxi from "../models/TaxiModel.js";
 import { sosUpdateTaxiDriver } from "../utils/sosUpdateTaxiDriver.js";
+import { sosUpdateTaxiPassenger } from "../utils/sosUpdateTaxiPassanger.js"; 
 
 export const createTaxi = async (req, res) => {
   try {
@@ -46,3 +47,22 @@ export const notifyTaxiDriver = async (req, res) => {
     return res.status(500).json({ success: false, message: "Internal Server Error" });
   }
 };
+
+
+export const notifyTaxiPassenger = async (req, res) => {
+  try {
+    const { sosId } = req.params;
+    const result = await sosUpdateTaxiPassenger(sosId); // ✅ corrected
+
+    if (!result.success) {
+      return res.status(400).json({ success: false, error: result.error });
+    }
+
+    return res.status(200).json({ success: true, data: result });
+  } catch (err) {
+    console.error("notifyTaxiPassenger Error:", err);
+    return res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+};
+
+
