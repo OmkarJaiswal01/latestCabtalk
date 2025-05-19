@@ -2,7 +2,7 @@ import axios from "axios";
 import SOS from "../models/sosModel.js";
 import Asset from "../models/assetModel.js";
 import Passenger from "../models/Passenger.js";
-import Taxi from "../models/TaxiModel.js"; // <-- Add this
+import Taxi from "../models/TaxiModel.js"; // using this to find taxi by phone number
 
 export async function sosUpdateTaxiPassenger(sosId) {
   console.log(`\n[DEBUG] ==== sosUpdateTaxiPassenger START (SOS ID: ${sosId}) ====`);
@@ -23,12 +23,14 @@ export async function sosUpdateTaxiPassenger(sosId) {
     return { success: false, sentTo: [], failedTo: [], error: err.message };
   }
 
-  // Get replacement taxi (this assumes `sos.taxiId` holds the ID of the new taxi)
+  // Find Taxi using sos.taxiDriverNumber
   let taxi;
   try {
-    if (!sos.taxiId) throw new Error("Taxi ID not found in SOS record");
-    taxi = await Taxi.findById(sos.taxiId).lean();
-    if (!taxi) throw new Error("Taxi not found");
+    const driverPhone = sos.taxiDriverNumber;
+    if (!driverPhone) throw new Error("Taxi driver number not provided in SOS");
+
+    taxi = await Taxi.findOne({ taxiDriverNumber: driverPhone }).lean();
+    if (!taxi) throw new Error("Taxi not found with that driver number");
   } catch (err) {
     return { success: false, sentTo: [], failedTo: [], error: err.message };
   }
@@ -73,7 +75,7 @@ export async function sosUpdateTaxiPassenger(sosId) {
       },
       {
         headers: {
-          Authorization: `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI5MzAwNGExMi04OWZlLTQxN2MtODBiNy0zMTljMjY2ZjliNjUiLCJ1bmlxdWVfbmFtZSI6ImhhcmkudHJpcGF0aGlAZ3hpbmV0d29ya3MuY29tIiwibmFtZWlkIjoiaGFyaS50cmlwYXRoaUBneGluZXR3b3Jrcy5jb20iLCJlbWFpbCI6ImhhcmkudHJpcGF0aGlAZ3hpbmV0d29ya3MuY29tIiwiYXV0aF90aW1lIjoiMDIvMDEvMjAyNSAwODozNDo0MCIsInRlbmFudF9pZCI6IjM4ODQyOCIsImRiX25hbWUiOiJtdC1wcm9kLVRlbmFudHMiLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOiJBRE1JTklTVFJBVE9SIiwiZXhwIjoyNTM0MDIzMDA4MDAsImlzcyI6IkNsYXJlX0FJIiwiYXVkIjoiQ2xhcmVfQUkifQ.tvRl-g9OGF3kOq6FQ-PPdRtfVrr4BkfxrRKoHc7tbC0`, // Replace with secure token
+          Authorization: `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI5MzAwNGExMi04OWZlLTQxN2MtODBiNy0zMTljMjY2ZjliNjUiLCJ1bmlxdWVfbmFtZSI6ImhhcmkudHJpcGF0aGlAZ3hpbmV0d29ya3MuY29tIiwibmFtZWlkIjoiaGFyaS50cmlwYXRoaUBneGluZXR3b3Jrcy5jb20iLCJlbWFpbCI6ImhhcmkudHJpcGF0aGlAZ3hpbmV0d29ya3MuY29tIiwiYXV0aF90aW1lIjoiMDIvMDEvMjAyNSAwODozNDo0MCIsInRlbmFudF9pZCI6IjM4ODQyOCIsImRiX25hbWUiOiJtdC1wcm9kLVRlbmFudHMiLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOiJBRE1JTklTVFJBVE9SIiwiZXhwIjoyNTM0MDIzMDA4MDAsImlzcyI6IkNsYXJlX0FJIiwiYXVkIjoiQ2xhcmVfQUkifQ.tvRl-g9OGF3kOq6FQ-PPdRtfVrr4BkfxrRKoHc7tbC0`, // secure this
           "Content-Type": "application/json-patch+json",
         },
         timeout: 10000,
