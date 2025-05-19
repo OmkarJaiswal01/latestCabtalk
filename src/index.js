@@ -12,8 +12,8 @@ import journeyRoutes from "./routes/journeyRoutes.js";
 import endJourneyRoutes from "./routes/endJourneyRoutes.js";
 import sosRoutes from "./routes/sosRoutes.js";
 import passengerListRoutes from "./routes/passengerListRoutes.js";
-// import taxiRoutes from "./routes/taxiRoutes.js";
 import taxiRoutes from "./routes/taxiRoutes.js";
+
 const app = express();
 const server = http.createServer(app);
 
@@ -47,8 +47,8 @@ app.use("/api/v1/assets", assetRoutes);
 app.use("/api/v1", journeyRoutes);
 app.use("/api/v1", endJourneyRoutes);
 app.use("/api/v1/pass", passengerListRoutes);
-// app.use("/api/v1/sos",taxiRoutes);
-app.use("/api/v1", taxiRoutes);
+app.use("/api/v1/sos",taxiRoutes);
+
 
 io.on("connection", (socket) => {
   console.log(`Client connected: ${socket.id}`);

@@ -1,11 +1,6 @@
 import express from "express";
-import { replaceCarAndTransferPassengers } from "../controllers/taxiController.js";
-
+import { createTaxi, getAllTaxis } from "../controllers/taxiController.js";
 const router = express.Router();
-
-// Route to handle car replacement and passenger transfer
-// In your Express router (e.g., sosRoutes.js)
-router.post("/sos/:id/transfer", replaceCarAndTransferPassengers);
-
-
+router.post("/:id/assign-taxi", createTaxi);
+router.get("/taxi", getAllTaxis);
 export default router;

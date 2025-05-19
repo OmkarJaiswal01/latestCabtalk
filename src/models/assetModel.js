@@ -7,7 +7,8 @@ const assetSchema = new mongoose.Schema(
       { type: mongoose.Schema.Types.ObjectId, ref: "Passenger" },
     ],
     isActive: { type: Boolean, default: false },
-    driver: { type: mongoose.Schema.Types.ObjectId, ref: "Taxi" }
+     taxi: { type: mongoose.Schema.Types.ObjectId, ref: "Taxi", required: true },  // new field for taxi info
+   
   },
   { timestamps: true }
 );
