@@ -2,6 +2,7 @@ import axios from "axios";
 import SOS from "../models/sosModel.js";
 import Asset from "../models/assetModel.js";
 import Passenger from "../models/Passenger.js";
+import Taxi from "../models/TaxiModel.js"; // <-- Add this
 
 export async function sosUpdateTaxiPassenger(sosId) {
   console.log(`\n[DEBUG] ==== sosUpdateTaxiPassenger START (SOS ID: ${sosId}) ====`);
@@ -14,14 +15,20 @@ export async function sosUpdateTaxiPassenger(sosId) {
     return { success: false, sentTo: [], failedTo: [], error: err.message };
   }
 
-  let brokenAsset, newAsset = null;
+  let brokenAsset;
   try {
-    [brokenAsset, newAsset] = await Promise.all([
-      Asset.findById(sos.asset).populate("driver", "name phoneNumber vehicleNumber").lean(),
-      sos.newAsset ? Asset.findById(sos.newAsset).populate("driver", "name phoneNumber vehicleNumber").lean() : Promise.resolve(null),
-    ]);
-
+    brokenAsset = await Asset.findById(sos.asset).populate("driver", "name phoneNumber vehicleNumber");
     if (!brokenAsset) throw new Error("Broken asset not found");
+  } catch (err) {
+    return { success: false, sentTo: [], failedTo: [], error: err.message };
+  }
+
+  // Get replacement taxi (this assumes `sos.taxiId` holds the ID of the new taxi)
+  let taxi;
+  try {
+    if (!sos.taxiId) throw new Error("Taxi ID not found in SOS record");
+    taxi = await Taxi.findById(sos.taxiId).lean();
+    if (!taxi) throw new Error("Taxi not found");
   } catch (err) {
     return { success: false, sentTo: [], failedTo: [], error: err.message };
   }
@@ -47,9 +54,9 @@ export async function sosUpdateTaxiPassenger(sosId) {
       customParams: [
         { name: "name", value: p.Employee_Name },
         { name: "cab_number", value: brokenAsset.driver?.vehicleNumber || "N/A" },
-        { name: "new_driver_name", value: newAsset?.driver?.name || "N/A" },
-        { name: "new_driver_contact", value: newAsset?.driver?.phoneNumber || "N/A" },
-        { name: "new_cab_no", value: newAsset?.driver?.vehicleNumber || "N/A" },
+        { name: "new_driver_name", value: taxi.taxiDriverName || "N/A" },
+        { name: "new_driver_contact", value: taxi.taxiDriverNumber || "N/A" },
+        { name: "new_cab_no", value: taxi.taxiVehicleNumber || "N/A" },
       ],
     };
   });
@@ -66,7 +73,7 @@ export async function sosUpdateTaxiPassenger(sosId) {
       },
       {
         headers: {
-          Authorization: `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI5MzAwNGExMi04OWZlLTQxN2MtODBiNy0zMTljMjY2ZjliNjUiLCJ1bmlxdWVfbmFtZSI6ImhhcmkudHJpcGF0aGlAZ3hpbmV0d29ya3MuY29tIiwibmFtZWlkIjoiaGFyaS50cmlwYXRoaUBneGluZXR3b3Jrcy5jb20iLCJlbWFpbCI6ImhhcmkudHJpcGF0aGlAZ3hpbmV0d29ya3MuY29tIiwiYXV0aF90aW1lIjoiMDIvMDEvMjAyNSAwODozNDo0MCIsInRlbmFudF9pZCI6IjM4ODQyOCIsImRiX25hbWUiOiJtdC1wcm9kLVRlbmFudHMiLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOiJBRE1JTklTVFJBVE9SIiwiZXhwIjoyNTM0MDIzMDA4MDAsImlzcyI6IkNsYXJlX0FJIiwiYXVkIjoiQ2xhcmVfQUkifQ.tvRl-g9OGF3kOq6FQ-PPdRtfVrr4BkfxrRKoHc7tbC0`, // replace with actual
+          Authorization: `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI5MzAwNGExMi04OWZlLTQxN2MtODBiNy0zMTljMjY2ZjliNjUiLCJ1bmlxdWVfbmFtZSI6ImhhcmkudHJpcGF0aGlAZ3hpbmV0d29ya3MuY29tIiwibmFtZWlkIjoiaGFyaS50cmlwYXRoaUBneGluZXR3b3Jrcy5jb20iLCJlbWFpbCI6ImhhcmkudHJpcGF0aGlAZ3hpbmV0d29ya3MuY29tIiwiYXV0aF90aW1lIjoiMDIvMDEvMjAyNSAwODozNDo0MCIsInRlbmFudF9pZCI6IjM4ODQyOCIsImRiX25hbWUiOiJtdC1wcm9kLVRlbmFudHMiLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOiJBRE1JTklTVFJBVE9SIiwiZXhwIjoyNTM0MDIzMDA4MDAsImlzcyI6IkNsYXJlX0FJIiwiYXVkIjoiQ2xhcmVfQUkifQ.tvRl-g9OGF3kOq6FQ-PPdRtfVrr4BkfxrRKoHc7tbC0`, // Replace with secure token
           "Content-Type": "application/json-patch+json",
         },
         timeout: 10000,
