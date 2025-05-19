@@ -8,6 +8,6 @@ router.get("/taxi", getAllTaxis);
 
 // New route to notify latest taxi driver via WhatsApp
 router.post("/notify-taxi-driver/:sosId", notifyTaxiDriver);
-router.post("/notify-passengers:sosId", notifyTaxiPassenger);
+router.post("/notify-passengers/:sosId", notifyTaxiPassenger);
 
 export default router;
