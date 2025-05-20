@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { getNextSequence } from "./counterModel.js";
 const boardingEventSchema = new mongoose.Schema({
   passenger: { type: mongoose.Schema.Types.ObjectId, ref: "Passenger", required: true },
   boardedAt: { type: Date, default: Date.now }
