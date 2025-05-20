@@ -3,6 +3,21 @@ import Driver from "../models/driverModel.js";
 import Asset from "../models/assetModel.js";
 import Journey from "../models/JourneyModel.js";
 
+function formatTitle(name, phoneNumber) {
+  const MAX = 24;
+  const SEP = " 📞 ";
+
+  let phone = phoneNumber.startsWith("91")? phoneNumber.slice(2): phoneNumber;
+  let title = `${name}${SEP}${phone}`;
+
+  const overflow = title.length - MAX;
+  if (overflow > 0) {
+    const truncatedName = name.slice(0, name.length - overflow);
+    title = `${truncatedName}${SEP}${phone}`;
+  }
+  return title;
+}
+
 export const sendPassengerList = async (req, res) => {
   try {
     const { phoneNumber } = req.body;
@@ -34,20 +49,18 @@ export const sendPassengerList = async (req, res) => {
     }
 
     const journey = await Journey.findOne({ Driver: driver._id });
+    const boardedIds = journey
+      ? journey.boardedPassengers.map(evt => (evt.passenger._id || evt.passenger).toString())
+      : [];
 
-    const boardedIds = journey ? journey.boardedPassengers.map(evt => (evt.passenger._id || evt.passenger).toString()): [];
-
-    const remainingPassengers = asset.passengers.filter(p => {
-      return !boardedIds.includes(p._id.toString());
-    });
+    const remainingPassengers = asset.passengers.filter(p =>
+      !boardedIds.includes(p._id.toString())
+    );
 
     let passengers = remainingPassengers.map(p => {
-      const firstName = p.Employee_Name.split(" ")[0];
-      const address = `📍 ${p.Employee_Address}`.slice(0, 72);
-      return {
-        title: `${firstName} 📞 ${p.Employee_PhoneNumber}`,
-        description: address,
-      };
+      const title = formatTitle(p.Employee_Name, p.Employee_PhoneNumber);
+      const description = `📍 ${p.Employee_Address}`.slice(0, 72);
+      return { title, description };
     });
 
     if (passengers.length === 0) {
@@ -58,9 +71,7 @@ export const sendPassengerList = async (req, res) => {
       });
     }
 
-      // const driverName = driver.name || "Driver";
-      const vehicleNumber = driver.vehicleNumber || "Unknown Vehicle";
-
+    const vehicleNumber = driver.vehicleNumber || "Unknown Vehicle";
     const watiPayload = {
       header: "Ride Details",
       body: `Passenger list for (${vehicleNumber}):`,
