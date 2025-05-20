@@ -78,22 +78,13 @@ export const getEndedJourneys = async (req, res) => {
     const endedJourneys = await EndJourney.find({
       endedAt: { $gte: startOfDay, $lt: endOfDay }
     })
-      .populate({ path: "Driver", select: "vehicleNumber name" })
-      .populate({ path: "Asset", select: "identifierOrName" })
+      .populate({ path: "Driver", select: "-__v" }) // get all fields except __v
+      .populate({ path: "Asset", select: "-__v" })  // get all fields except __v
       .sort({ endedAt: -1 });
-    const data = endedJourneys.map(j => ({
-      shortId: j.shortId,
-      vehicleNumber: j.Driver?.vehicleNumber || "Unknown",
-      Journey_Type: j.Journey_Type,
-      Occupancy: j.Occupancy,
-      hadSOS: j.hadSOS,
-      startedAt: j.startedAt,
-      endedAt: j.endedAt,
-      boardedCount: j.boardedPassengers.length
-    }));
+
     return res.status(200).json({
       message: "Ended journeys retrieved successfully.",
-      data
+      data: endedJourneys
     });
   } catch (error) {
     return res.status(500).json({ message: "Server error", error: error.message });
