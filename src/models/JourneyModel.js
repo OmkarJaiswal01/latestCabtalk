@@ -12,5 +12,13 @@ const journeySchema = new mongoose.Schema({
   SOS_Status:             { type: Boolean, default: false },
   boardedPassengers:      { type: [boardingEventSchema], default: [] },
   processedWebhookEvents: { type: [String], default: [] },
-}, { timestamps: true });
+}, { timestamps: true }
+);
+journeySchema.pre("save", async function (next) {
+  if (!this.shortId) {
+    const seq = await getNextSequence("Journey");
+    this.shortId = `JRN-${String(seq).padStart(3, "0")}`;
+  }
+  next();
+});
 export default mongoose.model("Journey", journeySchema);

@@ -61,7 +61,6 @@ export const createSOS = async (req, res) => {
           console.log("Recovered brokenAssetId from journey:", brokenAssetId);
         }
       }
-
     } else if (lowerType === "passenger") {
       console.log("Lookup passenger by phone:", phone_no);
       const passenger = await Passenger.findOne({
@@ -185,15 +184,15 @@ export const createSOS = async (req, res) => {
       });
     }
 
-    const sos = await SOS.create({
-      user_type,
-      phone_no,
-      sos_type,
-      status: "pending",
-      asset: brokenAssetId,
-      userDetails,
-    });
-    console.log("Created new SOS:", sos._id);
+   const sos = new SOS({
+     user_type,
+     phone_no,
+     sos_type,
+     asset: brokenAssetId,
+     userDetails,
+   });
+   await sos.save();  
+   console.log("Created new SOS:", sos._id, "shortId:", sos.shortId);
 
     const io = req.app.get("io");
     io.emit("newSOS", sos);
@@ -396,7 +395,7 @@ export const transferPassengersForSos = async (req, res) => {
     io.emit("driverNotified", {
       sosId: id,
       to: driverNotification.to,
-      success: driverNotification.success
+      success: driverNotification.success,
     });
     console.log("Socket events emitted");
 
@@ -410,10 +409,9 @@ export const transferPassengersForSos = async (req, res) => {
       newAsset: populatedNewAsset,
       notifications: {
         passengers: passengerNotification,
-        driver:     driverNotification
-      }
+        driver: driverNotification,
+      },
     });
-
   } catch (err) {
     console.error("transferPassengersForSos error:", err);
     return res.status(500).json({ success: false, message: "Server error" });
