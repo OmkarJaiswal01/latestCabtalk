@@ -61,19 +61,20 @@ export const getJourneys = async (req, res) => {
     if (!journeys || journeys.length === 0) {
       return res.status(200).json([]);
     }
-    const result = journeys.map(j => ({
+    const result = journeys.map((j) => ({
       _id: j._id,
+      shortId: j.shortId,
       driver: j.Driver,
       asset: j.Asset,
       Journey_Type: j.Journey_Type,
       Occupancy: j.Occupancy,
       SOS_Status: j.SOS_Status,
-      boardingEvents: j.boardedPassengers.map(evt => ({
+      boardingEvents: j.boardedPassengers.map((evt) => ({
         passenger: evt.passenger,
-        boardedAt: evt.boardedAt
+        boardedAt: evt.boardedAt,
       })),
       startedAt: j.createdAt,
-      updatedAt: j.updatedAt
+      updatedAt: j.updatedAt,
     }));
     return res.status(200).json(result);
   } catch (error) {
@@ -141,10 +142,10 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
       .populate("boardedPassengers.passenger", "name Employee_PhoneNumber");
     return res.status(200).json({
       message: "Journey updated successfully.",
-      boardingEvents: updated.boardedPassengers.map(evt => ({
+      boardingEvents: updated.boardedPassengers.map((evt) => ({
         passenger: evt.passenger,
-        boardedAt: evt.boardedAt
-      }))
+        boardedAt: evt.boardedAt,
+      })),
     });
   } catch (error) {
     console.error("handleWatiWebhook error:", error);
