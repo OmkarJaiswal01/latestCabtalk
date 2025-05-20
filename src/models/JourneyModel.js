@@ -6,6 +6,7 @@ const boardingEventSchema = new mongoose.Schema({
 }, { _id: false });
 
 const journeySchema = new mongoose.Schema({
+  shortId:     { type: String, unique: true },
   Driver:   { type: mongoose.Schema.Types.ObjectId, ref: "Driver", required: true, index: true },
   Asset:    { type: mongoose.Schema.Types.ObjectId, ref: "Asset",  required: true, index: true },
   Journey_Type:           { type: String,  required: true },

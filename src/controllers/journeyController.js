@@ -48,15 +48,14 @@ export const createJourney = async (req, res) => {
 export const getJourneys = async (req, res) => {
   try {
     const journeys = await Journey.find()
-      .populate("Driver", "vehicleNumber name")
+      .populate("Driver")
       .populate({
         path: "Asset",
-        populate: { path: "passengers", model: "Passenger" }
+        populate: { path: "passengers" },
       })
       .populate({
         path: "boardedPassengers.passenger",
         model: "Passenger",
-        select: "name Employee_PhoneNumber"
       });
 
     if (!journeys || journeys.length === 0) {
