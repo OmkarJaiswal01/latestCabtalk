@@ -6,14 +6,12 @@ import Journey from "../models/JourneyModel.js";
 function formatTitle(name, phoneNumber) {
   const MAX = 24;
   const SEP = " 📞 ";
-
-  let phone = phoneNumber.startsWith("91")? phoneNumber.slice(2): phoneNumber;
-  let title = `${name}${SEP}${phone}`;
+  let title = `${name}${SEP}${phoneNumber}`;
 
   const overflow = title.length - MAX;
   if (overflow > 0) {
     const truncatedName = name.slice(0, name.length - overflow);
-    title = `${truncatedName}${SEP}${phone}`;
+    title = `${truncatedName}${SEP}${phoneNumber}`;
   }
   return title;
 }
