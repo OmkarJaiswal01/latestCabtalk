@@ -79,7 +79,11 @@ export const getEndedJourneys = async (req, res) => {
       endedAt: { $gte: startOfDay, $lt: endOfDay }
     })
       .populate({ path: "Driver", select: "-__v" })
-      .populate({ path: "Asset", select: "-__v" }) 
+      .populate({ path: "Asset", select: "-__v" })
+      .populate({
+        path: "boardedPassengers.passenger",
+        model: "Passenger",
+      })
       .sort({ endedAt: -1 });
  
     return res.status(200).json({
