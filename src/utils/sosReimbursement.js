@@ -4,7 +4,6 @@ import Asset from "../models/assetModel.js";
 import Passenger from "../models/Passenger.js";
 
 export async function sosReimbursement(sosId) {
-  console.log(`[INFO] Starting sosReimbursement for SOS ID: ${sosId}`);
   const sos = await SOS.findById(sosId);
   if (!sos) {
     console.error(`[ERROR] SOS not found for ID: ${sosId}`);
@@ -16,7 +15,6 @@ export async function sosReimbursement(sosId) {
     return { success: false, sentTo: [], failedTo: [], error: "Asset not found" };
   }
   const roster = Array.isArray(brokenAsset.passengers) ? brokenAsset.passengers : [];
-  console.log(`[INFO] Passengers in broken asset: ${roster.length}`);
   if (roster.length === 0) {
     return { success: true, sentTo: [], failedTo: [] };
   }
@@ -31,7 +29,6 @@ export async function sosReimbursement(sosId) {
       ],
     };
   });
-  console.log("[DEBUG] Receivers to notify:", JSON.stringify(receivers, null, 2));
   const sentTo = [];
   const failedTo = [];
   try {
@@ -49,8 +46,6 @@ export async function sosReimbursement(sosId) {
       },
       timeout: 10000,
     });
-
-    console.log("[DEBUG] WATI response data:", JSON.stringify(resp.data, null, 2));
     const results = resp.data.results || resp.data.messages || [];
     results.forEach((r) => {
       if (r.status === "success") sentTo.push(r.to);
@@ -61,7 +56,5 @@ export async function sosReimbursement(sosId) {
     failedTo.push(...receivers.map((r) => r.whatsappNumber));
     return { success: false, sentTo: [], failedTo, error: err.message };
   }
-  console.log(`[INFO] Sent to: ${sentTo.join(", ")}`);
-  console.log(`[INFO] Failed to: ${failedTo.join(", ")}`);
   return { success: true, sentTo, failedTo };
 }

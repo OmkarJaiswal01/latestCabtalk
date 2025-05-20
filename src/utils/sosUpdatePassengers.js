@@ -4,23 +4,17 @@ import Asset from "../models/assetModel.js";
 import Passenger from "../models/Passenger.js";
 
 export async function sosUpdatePassengers(sosId) {
-  console.log(`[INFO] Starting sosUpdatePassengers for SOS ID: ${sosId}`);
-
   let sos;
   try {
     sos = await SOS.findById(sosId);
-    console.log(`[DEBUG] Fetched SOS: ${JSON.stringify(sos, null, 2)}`);
   } catch (err) {
-    console.error(`[ERROR] Error fetching SOS by ID ${sosId}:`, err);
     return { success: false, sentTo: [], failedTo: [], error: err.message };
   }
 
   if (!sos) {
-    console.error(`[ERROR] SOS not found for ID: ${sosId}`);
     return { success: false, sentTo: [], failedTo: [], error: "SOS not found" };
   }
   if (!sos.newAsset) {
-    console.warn(`[WARN] SOS ${sosId} has no newAsset assigned`);
     return {
       success: false,
       sentTo: [],
@@ -29,22 +23,21 @@ export async function sosUpdatePassengers(sosId) {
     };
   }
 
-  console.log(`[INFO] Fetching assets – brokenAsset: ${sos.asset}, newAsset: ${sos.newAsset}`);
   let brokenAsset, newAsset;
   try {
     [brokenAsset, newAsset] = await Promise.all([
-      Asset.findById(sos.asset).populate("driver", "name phoneNumber vehicleNumber").lean(),
-      Asset.findById(sos.newAsset).populate("driver", "name phoneNumber vehicleNumber").lean(),
+      Asset.findById(sos.asset)
+        .populate("driver", "name phoneNumber vehicleNumber")
+        .lean(),
+      Asset.findById(sos.newAsset)
+        .populate("driver", "name phoneNumber vehicleNumber")
+        .lean(),
     ]);
-    console.log(`[DEBUG] Broken Asset: ${JSON.stringify(brokenAsset, null, 2)}`);
-    console.log(`[DEBUG] New Asset: ${JSON.stringify(newAsset, null, 2)}`);
   } catch (err) {
-    console.error(`[ERROR] Error fetching assets:`, err);
     return { success: false, sentTo: [], failedTo: [], error: err.message };
   }
 
   if (!brokenAsset || !newAsset) {
-    console.error(`[ERROR] Either brokenAsset or newAsset not found`);
     return {
       success: false,
       sentTo: [],
@@ -54,9 +47,7 @@ export async function sosUpdatePassengers(sosId) {
   }
 
   const roster = Array.isArray(brokenAsset.passengers) ? brokenAsset.passengers : [];
-  console.log(`[INFO] Number of passengers to notify: ${roster.length}`);
   if (roster.length === 0) {
-    console.log(`[INFO] No passengers found in the broken asset`);
     return { success: true, sentTo: [], failedTo: [] };
   }
 
@@ -65,17 +56,12 @@ export async function sosUpdatePassengers(sosId) {
     passengers = await Passenger.find({ _id: { $in: roster } })
       .select("Employee_Name Employee_PhoneNumber")
       .lean();
-    console.log(`[DEBUG] Retrieved passenger details: ${JSON.stringify(passengers, null, 2)}`);
   } catch (err) {
-    console.error(`[ERROR] Failed to fetch passengers:`, err);
     return { success: false, sentTo: [], failedTo: [], error: err.message };
   }
 
-  const receivers = passengers.map(p => {
+  const receivers = passengers.map((p) => {
     const cleaned = p.Employee_PhoneNumber.replace(/\D/g, "");
-    if (!/^91\d{10}$/.test(cleaned)) {
-      console.warn(`[WARN] Invalid India phone number: ${cleaned} (from ${p.Employee_PhoneNumber})`);
-    }
     return {
       whatsappNumber: cleaned,
       customParams: [
@@ -87,11 +73,9 @@ export async function sosUpdatePassengers(sosId) {
       ],
     };
   });
-  console.log("[DEBUG] Compiled receivers list:", JSON.stringify(receivers, null, 2));
 
   let sentTo = [], failedTo = [];
   try {
-    console.log("[INFO] Sending messages via WATI API...");
     const response = await axios({
       method: "POST",
       url: "https://live-mt-server.wati.io/388428/api/v1/sendTemplateMessages",
@@ -107,21 +91,16 @@ export async function sosUpdatePassengers(sosId) {
       timeout: 10000,
     });
 
-    console.log("[DEBUG] WATI response:", JSON.stringify(response.data, null, 2));
     const results = response.data.results || response.data.messages || [];
-    results.forEach(r => {
+    results.forEach((r) => {
       if (r.status === "success") {
         sentTo.push(r.to);
       } else {
         failedTo.push(r.to);
-        console.warn(`[WARN] Message to ${r.to} failed with status: ${r.status}`);
       }
     });
-    console.log(`[INFO] Messages sent successfully to: ${sentTo.join(", ")}`);
-    console.log(`[INFO] Messages failed for: ${failedTo.join(", ")}`);
   } catch (err) {
-    console.error(`[ERROR] Failed sending messages: ${err.message}`, err);
-    failedTo = receivers.map(r => r.whatsappNumber);
+    failedTo = receivers.map((r) => r.whatsappNumber);
     return { success: false, sentTo: [], failedTo, error: err.message };
   }
   return { success: true, sentTo, failedTo };
