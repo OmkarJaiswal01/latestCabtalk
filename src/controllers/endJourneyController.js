@@ -3,7 +3,7 @@ import Journey from "../models/JourneyModel.js";
 import EndJourney from "../models/endJourneyModel.js";
 import Asset from "../models/assetModel.js";
 import Driver from "../models/driverModel.js";
-
+ 
 export const endJourney = async (req, res) => {
   const session = await mongoose.startSession();
   try {
@@ -65,7 +65,7 @@ export const endJourney = async (req, res) => {
     session.endSession();
   }
 };
-
+ 
 export const getEndedJourneys = async (req, res) => {
   try {
     let { date } = req.query;
@@ -78,10 +78,11 @@ export const getEndedJourneys = async (req, res) => {
     const endedJourneys = await EndJourney.find({
       endedAt: { $gte: startOfDay, $lt: endOfDay }
     })
-      .populate({ path: "Driver", select: "-__v" }) // get all fields except __v
-      .populate({ path: "Asset", select: "-__v" })  // get all fields except __v
+      .populate({ path: "Driver", select: "-__v" })
+      .populate({ path: "Asset", select: "-__v" })
+      .populate({ path: "boardedPassengers.passenger", model: "Passenger", })
       .sort({ endedAt: -1 });
-
+ 
     return res.status(200).json({
       message: "Ended journeys retrieved successfully.",
       data: endedJourneys
