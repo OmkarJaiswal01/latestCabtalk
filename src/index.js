@@ -12,6 +12,7 @@ import journeyRoutes from "./routes/journeyRoutes.js";
 import endJourneyRoutes from "./routes/endJourneyRoutes.js";
 import sosRoutes from "./routes/sosRoutes.js";
 import passengerListRoutes from "./routes/passengerListRoutes.js";
+import taxiRoutes from "./routes/taxiRoutes.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -44,6 +45,7 @@ app.use("/api/v1/assets", assetRoutes);
 app.use("/api/v1", journeyRoutes);
 app.use("/api/v1", endJourneyRoutes);
 app.use("/api/v1/pass", passengerListRoutes);
+app.use("/api/v1/sos", taxiRoutes);
 
 io.on("connection", (socket) => {
   console.log(`Client connected: ${socket.id}`);
@@ -59,7 +61,7 @@ app.use((err, req, res, next) => {
 });
 
 const MONGO_URI =
-  "mongodb+srv://vivekverma:vivekvermagxi@gxi.gus9m.mongodb.net/cabDB";
+  "mongodb+srv://vivekverma:vivekvermagxi@cab-talk.gus9m.mongodb.net/cabDB";
 
 mongoose
   .connect(MONGO_URI)
