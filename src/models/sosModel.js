@@ -9,6 +9,7 @@ const sosSchema = new mongoose.Schema(
     status:      { type: String, enum: ["pending", "resolved"], default: "pending" },
     asset:       { type: mongoose.Schema.Types.ObjectId, ref: "Asset", required: true },
     newAsset:    { type: mongoose.Schema.Types.ObjectId, ref: "Asset" },
+    sosSolution: { type: String, default: "" },
     userDetails: {
       name:       { type: String, default: "" },
       vehicle_no: { type: String, default: "" }

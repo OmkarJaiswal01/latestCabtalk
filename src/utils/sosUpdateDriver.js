@@ -6,18 +6,22 @@ import Passenger from "../models/Passenger.js";
 const WATI_BASE = "https://live-mt-server.wati.io/388428/api/v1";
 const TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI5MzAwNGExMi04OWZlLTQxN2MtODBiNy0zMTljMjY2ZjliNjUiLCJ1bmlxdWVfbmFtZSI6ImhhcmkudHJpcGF0aGlAZ3hpbmV0d29ya3MuY29tIiwibmFtZWlkIjoiaGFyaS50cmlwYXRoaUBneGluZXR3b3Jrcy5jb20iLCJlbWFpbCI6ImhhcmkudHJpcGF0aGlAZ3hpbmV0d29ya3MuY29tIiwiYXV0aF90aW1lIjoiMDIvMDEvMjAyNSAwODozNDo0MCIsInRlbmFudF9pZCI6IjM4ODQyOCIsImRiX25hbWUiOiJtdC1wcm9kLVRlbmFudHMiLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOiJBRE1JTklTVFJBVE9SIiwiZXhwIjoyNTM0MDIzMDA4MDAsImlzcyI6IkNsYXJlX0FJIiwiYXVkIjoiQ2xhcmVfQUkifQ.tvRl-g9OGF3kOq6FQ-PPdRtfVrr4BkfxrRKoHc7tbC0";
 
-export async function sosUpdateDriver(sosId) {
+export async function sosUpdateDriver(sosId, newAssetId) {
   const sos = await SOS.findById(sosId);
   if (!sos) {
     return { success: false, error: "SOS not found" };
   }
-  if (!sos.newAsset) {
-    return { success: false, error: "No newAsset assigned" };
+  // ----------------------
+  // replace `if (!sos.newAsset)` with:
+  if (!newAssetId) {
+    return { success: false, error: "No newAssetId provided" };
   }
+  // ----------------------
 
+  // Use newAssetId instead of sos.newAsset:
   const [brokenAsset, newAsset] = await Promise.all([
     Asset.findById(sos.asset).lean(),
-    Asset.findById(sos.newAsset)
+    Asset.findById(newAssetId)
       .populate("driver", "name phoneNumber vehicleNumber")
       .lean(),
   ]);
@@ -52,7 +56,7 @@ export async function sosUpdateDriver(sosId) {
   const url = `${WATI_BASE}/sendTemplateMessage?whatsappNumber=${phone}`;
   const payload = {
     template_name: "car_break_down_update_new_rider_final",
-    broadcast_name: `car_break_down_update_new_rider_final_050520251532`,
+    broadcast_name: `car_break_down_update_new_rider_final_${Date.now()}`,
     parameters: [
       { name: "new_driver_name", value: newAsset.driver.name },
       { name: "passenger_list", value: passengerList },
