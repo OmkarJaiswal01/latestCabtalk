@@ -12,6 +12,8 @@ import { sendPickupConfirmationMessage } from "../utils/PickUpPassengerSendTem.j
 export const sendPickupConfirmation = async (req, res) => {
   try {
     const { pickedPassengerPhoneNumber } = req.body;
+    console.log("Incoming body:", req.body);
+
 
     if (!pickedPassengerPhoneNumber) {
       return res.status(400).json({
