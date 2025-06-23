@@ -14,7 +14,7 @@ export const sendPickupConfirmation = async (req, res) => {
       });
     }
 
-    const cleanedPhone = pickedPassengerPhoneNumber.replace(/\D/g, "");
+    const cleanedPhone = pickedPassengerPhoneNumber.replace(/\D/g, ""); // Remove non-digits
 
     if (!/^91\d{10}$/.test(cleanedPhone)) {
       return res.status(400).json({
@@ -23,16 +23,14 @@ export const sendPickupConfirmation = async (req, res) => {
       });
     }
 
-    // Fetch all assets with populated passenger data
+    // Fetch all assets with passengers populated
     const assets = await Asset.find({
       "passengers.passengers.passenger": { $exists: true },
-    })
-      .populate({
-        path: "passengers.passengers.passenger",
-        model: "Passenger",
-        select: "Employee_Name Employee_PhoneNumber",
-      })
-      .lean();
+    }).populate({
+      path: "passengers.passengers.passenger",
+      model: "Passenger",
+      select: "Employee_Name Employee_PhoneNumber",
+    });
 
     if (!assets || assets.length === 0) {
       return res.status(404).json({
@@ -41,49 +39,48 @@ export const sendPickupConfirmation = async (req, res) => {
       });
     }
 
-    // ✅ Console log all passengers in all assets
     console.log("Fetched Assets with Passenger Lists:");
-    assets.forEach((asset, assetIndex) => {
-      console.log(`\nAsset ${assetIndex + 1}: ID = ${asset._id}`);
-      asset.passengers.forEach((shift, shiftIndex) => {
-        console.log(`  Shift ${shiftIndex + 1}:`);
-        shift.passengers.forEach((entry, entryIndex) => {
-          const p = entry.passenger;
-          if (p) {
-            console.log(
-              `    Passenger ${entryIndex + 1}: Name = ${p.Employee_Name}, Phone = ${p.Employee_PhoneNumber}`
-            );
-          } else {
-            console.log(`    Passenger ${entryIndex + 1}: Not populated`);
+    let foundPassenger = null;
+
+    for (let i = 0; i < assets.length; i++) {
+      const asset = assets[i];
+      console.log(`Asset ${i + 1}: ID = ${asset._id}`);
+
+      for (let j = 0; j < asset.passengers.length; j++) {
+        const shift = asset.passengers[j];
+        console.log(`  Shift ${j + 1}:`);
+
+        for (let k = 0; k < shift.passengers.length; k++) {
+          const p = shift.passengers[k].passenger;
+          const passengerPhone = p?.Employee_PhoneNumber?.replace(/\D/g, "");
+
+          console.log(
+            `    Passenger ${k + 1}: Name = ${p.Employee_Name}, Phone = ${passengerPhone}`
+          );
+
+          if (passengerPhone === cleanedPhone) {
+            foundPassenger = p;
+            break;
           }
-        });
-      });
-    });
+        }
 
-    // Flatten all passengers across all assets
-    const allPassengers = assets.flatMap((asset) =>
-      asset.passengers.flatMap((shift) =>
-        shift.passengers.map((ps) => ps.passenger)
-      )
-    );
+        if (foundPassenger) break;
+      }
 
-    // Find the passenger by phone number
-    const passenger = allPassengers.find(
-      (p) =>
-        p?.Employee_PhoneNumber?.replace(/\D/g, "") === cleanedPhone
-    );
+      if (foundPassenger) break;
+    }
 
-    if (!passenger) {
+    if (!foundPassenger) {
       return res.status(404).json({
         success: false,
         message: "Passenger not found in any asset.",
       });
     }
 
-    // Send WhatsApp pickup confirmation
+    // Send WhatsApp confirmation message
     const result = await sendPickupConfirmationMessage(
-      passenger.Employee_PhoneNumber,
-      passenger.Employee_Name
+      foundPassenger.Employee_PhoneNumber,
+      foundPassenger.Employee_Name
     );
 
     if (!result.success) {
