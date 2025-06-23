@@ -1,7 +1,7 @@
 import Passenger from "../models/Passenger.js";
 import Asset from "../models/assetModel.js";
 import { sendPickupConfirmationMessage } from "../utils/PickUpPassengerSendTem.js";
-import {sendOtherPassengerSameShiftUpdateMessage} from "../utils/InformOtherPassenger.js";
+import { sendOtherPassengerSameShiftUpdateMessage } from "../utils/InformOtherPassenger.js";
 
 export const sendPickupConfirmation = async (req, res) => {
   try {
@@ -39,51 +39,36 @@ export const sendPickupConfirmation = async (req, res) => {
       });
     }
 
-    console.log("Fetched Assets with Passenger Lists:");
     let foundPassenger = null;
     let currentShift = null;
 
-    for (let i = 0; i < assets.length; i++) {
-      const asset = assets[i];
-      console.log(`Asset ${i + 1}: ID = ${asset._id}`);
-
-      for (let j = 0; j < asset.passengers.length; j++) {
-        const shift = asset.passengers[j];
-        console.log(`  Shift ${j + 1}:`);
-
-        for (let k = 0; k < shift.passengers.length; k++) {
-          const p = shift.passengers[k].passenger;
+    for (const asset of assets) {
+      for (const shift of asset.passengers) {
+        for (const shiftPassenger of shift.passengers) {
+          const p = shiftPassenger.passenger;
           const passengerPhone = p?.Employee_PhoneNumber?.replace(/\D/g, "");
-
-          console.log(
-            `    Passenger ${k + 1}: Name = ${p.Employee_Name}, Phone = ${passengerPhone}`
-          );
-
           if (passengerPhone === cleanedPhone) {
             foundPassenger = p;
             currentShift = shift.passengers;
             break;
           }
         }
-
         if (foundPassenger) break;
       }
-
       if (foundPassenger) break;
     }
 
     if (!foundPassenger || !currentShift) {
       return res.status(404).json({
         success: false,
-        message: "Passenger not found in any asset.",
+        message: "Picked passenger not found in any asset shift.",
       });
     }
 
-    // 1️⃣ Send "picked" message to the picked passenger
+    // ✅ 1. Send confirmation to the picked passenger
     const pickedResult = await sendPickupConfirmationMessage(
       foundPassenger.Employee_PhoneNumber,
-      foundPassenger.Employee_Name,
-      "picked"
+      foundPassenger.Employee_Name
     );
 
     if (!pickedResult.success) {
@@ -94,7 +79,7 @@ export const sendPickupConfirmation = async (req, res) => {
       });
     }
 
-    // 2️⃣ Notify other passengers in the same shift
+    // ✅ 2. Send notification to remaining passengers in the same shift
     const notifications = [];
 
     for (const shiftPassenger of currentShift) {
@@ -102,24 +87,27 @@ export const sendPickupConfirmation = async (req, res) => {
       if (!other || !other.Employee_PhoneNumber) continue;
 
       const otherPhone = other.Employee_PhoneNumber.replace(/\D/g, "");
+      const otherName = other.Employee_Name;
+
       if (otherPhone !== cleanedPhone) {
         const notifyResult = await sendOtherPassengerSameShiftUpdateMessage(
           otherPhone,
-          foundPassenger.Employee_Name, // show picked person's name
-          "notify"
+          otherName, // 👈 name of other passenger (recipient)
+          foundPassenger.Employee_Name // 👈 name of picked passenger
         );
 
         notifications.push({
-          name: other.Employee_Name,
+          name: otherName,
           phone: otherPhone,
           success: notifyResult.success,
+          error: notifyResult.error || null,
         });
       }
     }
 
     return res.status(200).json({
       success: true,
-      message: "Template sent to picked passenger and others in same shift.",
+      message: "Message sent to picked passenger and notified others in shift.",
       pickedPassenger: {
         name: foundPassenger.Employee_Name,
         phone: foundPassenger.Employee_PhoneNumber,
