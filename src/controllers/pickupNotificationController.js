@@ -1,6 +1,7 @@
 import Passenger from "../models/Passenger.js";
 import Asset from "../models/assetModel.js";
 import { sendPickupConfirmationMessage } from "../utils/PickUpPassengerSendTem.js";
+import {sendOtherPassengerSameShiftUpdateMessage} from "../utils/InformOtherPassenger.js";
 
 export const sendPickupConfirmation = async (req, res) => {
   try {
@@ -14,7 +15,7 @@ export const sendPickupConfirmation = async (req, res) => {
       });
     }
 
-    const cleanedPhone = pickedPassengerPhoneNumber.replace(/\D/g, ""); // Remove non-digits
+    const cleanedPhone = pickedPassengerPhoneNumber.replace(/\D/g, "");
 
     if (!/^91\d{10}$/.test(cleanedPhone)) {
       return res.status(400).json({
@@ -23,7 +24,6 @@ export const sendPickupConfirmation = async (req, res) => {
       });
     }
 
-    // Fetch all assets with passengers populated
     const assets = await Asset.find({
       "passengers.passengers.passenger": { $exists: true },
     }).populate({
@@ -41,6 +41,7 @@ export const sendPickupConfirmation = async (req, res) => {
 
     console.log("Fetched Assets with Passenger Lists:");
     let foundPassenger = null;
+    let currentShift = null;
 
     for (let i = 0; i < assets.length; i++) {
       const asset = assets[i];
@@ -60,6 +61,7 @@ export const sendPickupConfirmation = async (req, res) => {
 
           if (passengerPhone === cleanedPhone) {
             foundPassenger = p;
+            currentShift = shift.passengers;
             break;
           }
         }
@@ -70,32 +72,60 @@ export const sendPickupConfirmation = async (req, res) => {
       if (foundPassenger) break;
     }
 
-    if (!foundPassenger) {
+    if (!foundPassenger || !currentShift) {
       return res.status(404).json({
         success: false,
         message: "Passenger not found in any asset.",
       });
     }
 
-    // Send WhatsApp confirmation message
-    const result = await sendPickupConfirmationMessage(
+    // 1️⃣ Send "picked" message to the picked passenger
+    const pickedResult = await sendPickupConfirmationMessage(
       foundPassenger.Employee_PhoneNumber,
-      foundPassenger.Employee_Name
+      foundPassenger.Employee_Name,
+      "picked"
     );
 
-    if (!result.success) {
+    if (!pickedResult.success) {
       return res.status(502).json({
         success: false,
-        message: "Failed to send WhatsApp message via WATI.",
-        error: result.error,
+        message: "Failed to send message to picked passenger.",
+        error: pickedResult.error,
       });
+    }
+
+    // 2️⃣ Notify other passengers in the same shift
+    const notifications = [];
+
+    for (const shiftPassenger of currentShift) {
+      const other = shiftPassenger.passenger;
+      if (!other || !other.Employee_PhoneNumber) continue;
+
+      const otherPhone = other.Employee_PhoneNumber.replace(/\D/g, "");
+      if (otherPhone !== cleanedPhone) {
+        const notifyResult = await sendOtherPassengerSameShiftUpdateMessage(
+          otherPhone,
+          foundPassenger.Employee_Name, // show picked person's name
+          "notify"
+        );
+
+        notifications.push({
+          name: other.Employee_Name,
+          phone: otherPhone,
+          success: notifyResult.success,
+        });
+      }
     }
 
     return res.status(200).json({
       success: true,
-      message: "Pickup confirmation WhatsApp message sent successfully.",
-      to: result.to,
-      watiResponse: result.data,
+      message: "Template sent to picked passenger and others in same shift.",
+      pickedPassenger: {
+        name: foundPassenger.Employee_Name,
+        phone: foundPassenger.Employee_PhoneNumber,
+        result: pickedResult,
+      },
+      notifiedPassengers: notifications,
     });
   } catch (error) {
     console.error("Pickup confirmation error:", error);
