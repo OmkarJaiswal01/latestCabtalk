@@ -4,6 +4,6 @@ import { sendPickupConfirmation } from "../controllers/pickupNotificationControl
 const router = express.Router();
 
 // Route: POST /api/passenger/confirm-pickup
-router.post("/passenger/confirm-pickup", sendPickupConfirmation);
+router.post("/confirm-pickup", sendPickupConfirmation);
 
 export default router;

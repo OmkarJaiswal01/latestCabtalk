@@ -48,7 +48,7 @@ app.use("/api/v1", endJourneyRoutes);
 app.use("/api/v1/pass", passengerListRoutes);
 app.use("/api/v1/sos", taxiRoutes);
 
-app.use("/api/", notificationRoutes);
+app.use("/api/v1", notificationRoutes);
 
 io.on("connection", (socket) => {
   console.log(`Client connected: ${socket.id}`);
