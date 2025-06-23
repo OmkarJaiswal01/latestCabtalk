@@ -1,48 +1,55 @@
-//import fetch from "node-fetch"; // Ensure this is installed if using CommonJS or ESM
+import axios from "axios";
 
-const WATI_API_URL = "https://live-mt-server.wati.io/388428/api/v1/sendTemplateMessage";
-const WATI_AUTH_TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJiZmE0YTlhYS05MTVmLTQxYzktYmE5Yi00YjA2ZjZhZWM4ZDkiLCJ1bmlxdWVfbmFtZSI6Im9ta2FyLmphaXN3YWxAZ3hpbmV0d29ya3MuY29tIiwibmFtZWlkIjoib21rYXIuamFpc3dhbEBneGluZXR3b3Jrcy5jb20iLCJlbWFpbCI6Im9ta2FyLmphaXN3YWxAZ3hpbmV0d29ya3MuY29tIiwiYXV0aF90aW1lIjoiMDQvMDcvMjAyNSAxMDozOTowMCIsInRlbmFudF9pZCI6IjM4ODQyOCIsImRiX25hbWUiOiJtdC1wcm9kLVRlbmFudHMiLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOlsiQlJPQURDQVNUX01BTkFHRVIiLCJURU1QTEFURV9NQU5BR0VSIiwiQ09OVEFDVF9NQU5BR0VSIiwiT1BFUkFUT1IiLCJERVZFTE9QRVIiLCJBVVRPTUFUSU9OX01BTkFHRVIiXSwiZXhwIjoyNTM0MDIzMDA4MDAsImlzcyI6IkNsYXJlX0FJIiwiYXVkIjoiQ2xhcmVfQUkifQ.WSekNHf4C3RXr7_0gI23V5oD2BwFuUvfcyIeKjBs5Ug"; // Replace with secure token in env
+const WATI_BASE = "https://live-mt-server.wati.io/388428/api/v1";
+const TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."; // Put this in .env
 
 /**
- * Sends a WhatsApp pickup confirmation message via WATI
- * @param {string} phoneNumber - Passenger's phone number (with country code)
- * @param {string} passengerName - Name of the picked passenger
+ * Send WhatsApp pickup confirmation message to a passenger via WATI.
+ * @param {string} phoneNumber - Passenger's phone number (should include country code).
+ * @param {string} passengerName - Passenger's name for the message template.
  */
-export const sendPickupConfirmationMessage = async (phoneNumber, passengerName) => {
-  const url = `${WATI_API_URL}?whatsappNumber=${phoneNumber}`;
+export async function sendPickupConfirmationMessage(phoneNumber, passengerName) {
+  if (!phoneNumber || !passengerName) {
+    throw new Error("phoneNumber and passengerName are required");
+  }
 
+  const cleanPhone = phoneNumber.replace(/\D/g, ""); // remove non-digit characters
+
+  if (!/^91\d{10}$/.test(cleanPhone)) {
+    throw new Error("Invalid Indian phone number format");
+  }
+
+  const url = `${WATI_BASE}/sendTemplateMessage?whatsappNumber=${cleanPhone}`;
   const payload = {
+    template_name: "picked_up_passenger_update",
+    broadcast_name: `picked_up_passenger_update_${Date.now()}`,
     parameters: [
       {
         name: "name",
         value: passengerName,
       },
     ],
-    broadcast_name: `picked_up_passenger_update_${new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14)}`,
-    template_name: "picked_up_passenger_update",
-  };
-
-  const options = {
-    method: "POST",
-    headers: {
-      "content-type": "application/json-patch+json",
-      Authorization: WATI_AUTH_TOKEN,
-    },
-    body: JSON.stringify(payload),
   };
 
   try {
-    const response = await fetch(url, options);
-    const data = await response.json();
+    const response = await axios.post(url, payload, {
+      headers: {
+        Authorization: TOKEN,
+        "Content-Type": "application/json-patch+json",
+      },
+      timeout: 10000,
+    });
 
-    if (!response.ok) {
-      console.error("WATI API error:", data);
-      throw new Error(data.message || "Failed to send confirmation");
-    }
-
-    return data;
+    return {
+      success: true,
+      to: cleanPhone,
+      data: response.data,
+    };
   } catch (err) {
-    console.error("Pickup confirmation error:", err.message);
-    throw err;
+    console.error("WATI error:", err.response?.data || err.message);
+    return {
+      success: false,
+      error: err.response?.data || err.message,
+    };
   }
-};
+}
