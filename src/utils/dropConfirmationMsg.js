@@ -1,5 +1,5 @@
 // utils/sendDropConfirmationMessage.js
-import fetch from 'node-fetch';
+//import fetch from 'node-fetch';
 
 export const sendDropConfirmationMessage = async (phoneNumber, name) => {
   try {
