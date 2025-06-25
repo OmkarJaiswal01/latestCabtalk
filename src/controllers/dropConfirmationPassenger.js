@@ -9,7 +9,7 @@ export const sendDropConfirmation = async (req, res) => {
     if (!passengerPhoneNumber) {
       return res.status(400).json({
         success: false,
-        message: "passengerPhoneNumber is required",
+        message: "passenger PhoneNumber is required",
       });
     }
 
@@ -20,7 +20,7 @@ export const sendDropConfirmation = async (req, res) => {
     });
 
     if (!passenger) {
-      return res.status(404).json({
+      return res.status(404).json({ 
         success: false,
         message: "Passenger not found",
       });
