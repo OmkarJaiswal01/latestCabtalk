@@ -423,4 +423,3 @@ export const removePassengerFromAsset = asyncHandler(async (req, res) => {
   });
 });
 
-//1
