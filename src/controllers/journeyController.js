@@ -186,7 +186,6 @@ export const getJourneys = async (req, res) => {
 
 export const handleWatiWebhook = asyncHandler(async (req, res) => {
   try {
-    console.log("— In handleWatiWebhook, payload:", req.body);
     const { id: eventId, type, waId, listReply } = req.body;
     if (type !== "interactive" || !listReply) {
       return res.status(200).json({ message: "Ignored: Not interactive or missing listReply." });
@@ -222,7 +221,6 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
     const title = listReply.title || "";
     const match = title.match(/(\d{12})$/);
     if (!match) {
-      await sendWhatsAppMessage(waId, "Ignored interactive reply without 10-digit phone.");
       return res.status(200).json({ message: "Ignored: no valid passenger selection." });
     }
     const passengerPhone = match[0];
@@ -286,10 +284,13 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
       // send the drop template
       const dropRes = await sendDropConfirmationMessage(passenger.Employee_PhoneNumber, passenger.Employee_Name);
       if (!dropRes.success) {
+        await sendWhatsAppMessage(waId, "Failed to send drop confirmation.");
         return res.status(502).json({ message: "Failed to send drop confirmation.", error: dropRes.error });
       }
+      await sendWhatsAppMessage(waId, "Journey updated & drop confirmation sent.");
       return res.status(200).json({ message: "Journey updated & drop confirmation sent." });
     }
+    await sendWhatsAppMessage(waId, "Unsupported Journey_Type");
     return res.status(400).json({ message: `Unsupported Journey_Type: ${journey.Journey_Type}` });
   }
   catch (error) {
