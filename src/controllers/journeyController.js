@@ -189,7 +189,7 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
     console.log("— In handleWatiWebhook, payload:", req.body);
     const { id: eventId, type, waId, listReply } = req.body;
     if (type !== "interactive" || !listReply) {
-      return res.status(200).json({ message: "Ignored: Not an interactive message or missing listReply." });
+      return res.status(200).json({ message: "Ignored: Not interactive or missing listReply." });
     }
 
     const driver = await Driver.findOne({ phoneNumber: waId });
@@ -212,67 +212,66 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
       return res.status(200).json({ message: "No active journey found." });
     }
 
+    // 1) Prevent duplicate
     if (journey.processedWebhookEvents.includes(eventId)) {
       return res.status(200).json({ message: "Duplicate event ignored." });
     }
+    // journey.processedWebhookEvents.push(eventId);
 
-    // pull the last 10 digits
+    // 2) Extract phone
     const title = listReply.title || "";
     const match = title.match(/(\d{12})$/);
     if (!match) {
       await sendWhatsAppMessage(waId, "Ignored interactive reply without 10-digit phone.");
-      console.log("Ignored interactive reply without 10-digit phone.");
       return res.status(200).json({ message: "Ignored: no valid passenger selection." });
     }
     const passengerPhone = match[0];
 
+    // 3) Lookup passenger
     const passenger = await Passenger.findOne({ Employee_PhoneNumber: passengerPhone });
     if (!passenger) {
       await sendWhatsAppMessage(waId, "🚫 Passenger not found. Please verify and retry.");
       return res.status(200).json({ message: "Passenger not found." });
     }
 
-    // record that we've seen this event
-    // journey.processedWebhookEvents.push(eventId);
+    // 4) Shared validation: assignment, capacity, already‐boarded
+    const isAssigned = journey.Asset.passengers.some(shift =>
+      shift.passengers.some(pSub => pSub.passenger._id.equals(passenger._id))
+    );
+    if (!isAssigned) {
+      await sendWhatsAppMessage(waId, "🚫 Passenger not assigned to this vehicle today.");
+      return res.status(200).json({ message: "Passenger not assigned." });
+    }
+    if (journey.Occupancy + 1 > journey.Asset.capacity) {
+      await sendWhatsAppMessage(waId, "⚠️ Cannot board. Vehicle at full capacity.");
+      return res.status(200).json({ message: "Vehicle at full capacity." });
+    }
+    if (journey.boardedPassengers.some(evt => evt.passenger.equals(passenger._id))) {
+      await sendWhatsAppMessage(waId, "✅ Passenger already boarded.");
+      return res.status(200).json({ message: "Passenger already boarded." });
+    }
 
-    // decide pickup vs drop from your Journey_Type field:
-    const jt = (journey.Journey_Type || "").toLowerCase();
-
-    if (jt === "pickup") {
-      // --- your existing boarding checks ---
-      const isAssigned = journey.Asset.passengers.some(shift =>
-        shift.passengers.some(pSub => pSub.passenger._id.equals(passenger._id))
-      );
-      if (!isAssigned) {
-        await sendWhatsAppMessage(waId, "🚫 Passenger not assigned to this vehicle today.");
-        return res.status(200).json({ message: "Passenger not assigned to this vehicle." });
-      }
-      if (journey.Occupancy + 1 > journey.Asset.capacity) {
-        await sendWhatsAppMessage(waId, "⚠️ Cannot board. Vehicle at full capacity.");
-        return res.status(200).json({ message: "Vehicle at full capacity." });
-      }
-      if (journey.boardedPassengers.some(evt => evt.passenger.equals(passenger._id))) {
-        await sendWhatsAppMessage(waId, "✅ Passenger already boarded.");
-        return res.status(200).json({ message: "Passenger already boarded." });
-      }
-
-      // --- mark boarded ---
-      journey.Occupancy += 1;
-      journey.boardedPassengers.push({ passenger: passenger._id, boardedAt: new Date() });
-      await journey.save();
-      if (req.app.get("io")) req.app.get("io").emit("journeyUpdated", journey);
+    // 5) Mark boarded exactly once for both pick & drop
+    journey.Occupancy += 1;
+    journey.boardedPassengers.push({ passenger: passenger._id, boardedAt: new Date() });
+    await journey.save();
+    if (req.app.get("io")) req.app.get("io").emit("journeyUpdated", journey);
       await sendWhatsAppMessage(waId, "✅ Passenger confirmed. Thank you!");
-      // --- SEND PICKUP CONFIRMATION ---
+
+    // 6) Fire the correct template
+    const jt = (journey.Journey_Type || "").toLowerCase();
+    if (jt === "pickup") {
+      // send the pickup template
       await sendPickupConfirmationMessage(passenger.Employee_PhoneNumber, passenger.Employee_Name);
 
-      // --- NOTIFY OTHER SHIFT-MATES ---
-      const boarded = new Set(journey.boardedPassengers.map(bp => bp.passenger.toString()));
+      // notify other shift‐mates
+      const boardedSet = new Set(journey.boardedPassengers.map(bp => bp.passenger.toString()));
       const thisShift = journey.Asset.passengers.find(shift =>
         shift.passengers.some(pSub => pSub.passenger._id.equals(passenger._id))
       );
       if (thisShift) {
         for (const { passenger: pDoc } of thisShift.passengers) {
-          if (pDoc._id.equals(passenger._id) || boarded.has(pDoc._id.toString())) continue;
+          if (pDoc._id.equals(passenger._id) || boardedSet.has(pDoc._id.toString())) continue;
           await sendOtherPassengerSameShiftUpdateMessage(
             pDoc.Employee_PhoneNumber,
             pDoc.Employee_Name,
@@ -283,39 +282,14 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
 
       return res.status(200).json({ message: "Journey updated & pickup confirmation sent." });
     }
-
     if (jt === "drop") {
-      // --- ensure they were boarded ---
-      const idx = journey.boardedPassengers.findIndex(evt =>
-        evt.passenger.equals(passenger._id)
-      );
-      if (idx === -1) {
-        await sendWhatsAppMessage(waId, "⚠️ Cannot drop: passenger not boarded.");
-        return res.status(200).json({ message: "Cannot drop: passenger not boarded." });
-      }
-
-      // --- remove from boarded & decrement occupancy ---
-      journey.boardedPassengers.splice(idx, 1);
-      journey.Occupancy = Math.max(0, journey.Occupancy - 1);
-      await journey.save();
-      if (req.app.get("io")) req.app.get("io").emit("journeyUpdated", journey);
-
-      // --- SEND DROP CONFIRMATION ---
-      const dropRes = await sendDropConfirmationMessage(
-        passenger.Employee_PhoneNumber,
-        passenger.Employee_Name
-      );
+      // send the drop template
+      const dropRes = await sendDropConfirmationMessage(passenger.Employee_PhoneNumber, passenger.Employee_Name);
       if (!dropRes.success) {
-        return res.status(502).json({
-          message: "Failed to send drop confirmation.",
-          error: dropRes.error
-        });
+        return res.status(502).json({ message: "Failed to send drop confirmation.", error: dropRes.error });
       }
-
       return res.status(200).json({ message: "Journey updated & drop confirmation sent." });
     }
-
-    // unsupported Journey_Type
     return res.status(400).json({ message: `Unsupported Journey_Type: ${journey.Journey_Type}` });
   }
   catch (error) {
