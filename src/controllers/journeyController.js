@@ -233,7 +233,7 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
     }
 
     // record that we've seen this event
-    journey.processedWebhookEvents.push(eventId);
+    // journey.processedWebhookEvents.push(eventId);
 
     // decide pickup vs drop from your Journey_Type field:
     const jt = (journey.Journey_Type || "").toLowerCase();
@@ -261,7 +261,7 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
       journey.boardedPassengers.push({ passenger: passenger._id, boardedAt: new Date() });
       await journey.save();
       if (req.app.get("io")) req.app.get("io").emit("journeyUpdated", journey);
-
+      await sendWhatsAppMessage(waId, "✅ Passenger confirmed. Thank you!");
       // --- SEND PICKUP CONFIRMATION ---
       await sendPickupConfirmationMessage(passenger.Employee_PhoneNumber, passenger.Employee_Name);
 
