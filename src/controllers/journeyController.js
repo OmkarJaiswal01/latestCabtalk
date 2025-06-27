@@ -218,7 +218,7 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
 
     // pull the last 10 digits
     const title = listReply.title || "";
-    const match = title.match(/(\d{10})$/);
+    const match = title.match(/(\d{12})$/);
     if (!match) {
       console.log("Ignored interactive reply without 10-digit phone.");
       return res.status(200).json({ message: "Ignored: no valid passenger selection." });
