@@ -277,20 +277,15 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
           );
         }
       }
-
       return res.status(200).json({ message: "Journey updated & pickup confirmation sent." });
     }
     if (jt === "drop") {
-      // send the drop template
       const dropRes = await sendDropConfirmationMessage(passenger.Employee_PhoneNumber, passenger.Employee_Name);
       if (!dropRes.success) {
-        await sendWhatsAppMessage(waId, "Failed to send drop confirmation.");
         return res.status(502).json({ message: "Failed to send drop confirmation.", error: dropRes.error });
       }
-      await sendWhatsAppMessage(waId, "Journey updated & drop confirmation sent.");
       return res.status(200).json({ message: "Journey updated & drop confirmation sent." });
     }
-    await sendWhatsAppMessage(waId, "Unsupported Journey_Type");
     return res.status(400).json({ message: `Unsupported Journey_Type: ${journey.Journey_Type}` });
   }
   catch (error) {

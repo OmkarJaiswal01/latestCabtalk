@@ -1,12 +1,11 @@
 // utils/sendShiftPassengerUpdateMessage.js
 
-
 // utils/InformOtherPassenger.js
 
 export const sendOtherPassengerSameShiftUpdateMessage = async (
   passengerPhone,
   otherPassengerName, // 👈 name of the other passenger (recipient)
-  pickedPassengerName  // 👈 name of the passenger who was just picked
+  pickedPassengerName // 👈 name of the passenger who was just picked
 ) => {
   const cleanPhone = passengerPhone.replace(/\D/g, "");
   const url = `https://live-mt-server.wati.io/388428/api/v1/sendTemplateMessage?whatsappNumber=${cleanPhone}`;
@@ -23,7 +22,7 @@ export const sendOtherPassengerSameShiftUpdateMessage = async (
       template_name: "unboarded_passenger_update_final",
       parameters: [
         { name: "name", value: otherPassengerName },
-        { name: "last_boarded_passenger", value: pickedPassengerName }
+        { name: "last_boarded_passenger", value: pickedPassengerName },
       ],
     }),
   };
