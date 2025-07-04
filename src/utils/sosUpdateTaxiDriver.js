@@ -26,11 +26,11 @@ export async function sosUpdateTaxiDriver(sosId) {
     console.error("[ERROR] Broken asset not found");
     return { success: false, error: "Broken asset not found" };
   }
-  // const passengers = await Passenger.find({ _id: { $in: brokenAsset.passengers || [] } })
+
   const rosterIds = Array.isArray(brokenAsset.passengers)
-    ? brokenAsset.passengers.flatMap((shift) =>
-        shift.passengers.map((ps) => ps.passenger)
-      )
+    ? brokenAsset.passengers
+        .filter(block => block.shift === sos.sos_shift)
+        .flatMap(block => block.passengers.map(ps => ps.passenger))
     : [];
   const passengers = await Passenger.find({ _id: { $in: rosterIds } })
     .select("Employee_Name Employee_PhoneNumber Employee_Address")
@@ -38,8 +38,7 @@ export async function sosUpdateTaxiDriver(sosId) {
   let passengerList = passengers.length
     ? passengers
         .map(
-          (p) =>
-            `${p.Employee_Name}, ${p.Employee_PhoneNumber}, ${p.Employee_Address}`
+          p => `${p.Employee_Name}, ${p.Employee_PhoneNumber}, ${p.Employee_Address}`
         )
         .join(" | ")
     : "No passengers listed";
@@ -109,7 +108,7 @@ export async function sosUpdateTaxiDriver(sosId) {
           Occupancy: journey.Occupancy,
           hadSOS: journey.SOS_Status,
           startedAt: journey.createdAt,
-          boardedPassengers: journey.boardedPassengers.map((evt) => ({
+          boardedPassengers: journey.boardedPassengers.map(evt => ({
             passenger: evt.passenger,
             boardedAt: evt.boardedAt,
           })),

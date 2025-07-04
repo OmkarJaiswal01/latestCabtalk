@@ -87,28 +87,31 @@ export const sendPickupConfirmation = async (req, res) => {
     );
 
     // ✅ Step 6: Notify remaining passengers
-    const warnings = [];
-    const boardedSet = new Set(journey.boardedPassengers.map(bp => bp.passenger.toString()));
+        // ✅ Step 6: Notify remaining passengers
+     const warnings = [];
+     const boardedSet = new Set(journey.boardedPassengers.map(bp => bp.passenger.toString()));
 
-    for (const p of currentShiftPassengers) {
-      if (!p || p._id.toString() === pickedPassenger._id.toString()) continue;
-      if (!p.Employee_PhoneNumber) continue;
+     for (const p of currentShiftPassengers) {
+-      // old: skips only the picked passenger
+-      if (!p || p._id.toString() === pickedPassenger._id.toString()) continue;
++      // new: skip anyone already in the boardedSet
++      if (!p || boardedSet.has(p._id.toString())) continue;
+       if (!p.Employee_PhoneNumber) continue;
 
-      if (!boardedSet.has(p._id.toString())) {
-        const notify = await sendOtherPassengerSameShiftUpdateMessage(
-          p.Employee_PhoneNumber,
-          p.Employee_Name,
-          pickedPassenger.Employee_Name
-        );
+       const notify = await sendOtherPassengerSameShiftUpdateMessage(
+         p.Employee_PhoneNumber,
+         p.Employee_Name,
+         pickedPassenger.Employee_Name
+       );
 
-        warnings.push({
-          name: p.Employee_Name,
-          phone: p.Employee_PhoneNumber,
-          success: notify.success,
-          error: notify.error || null,
-        });
-      }
-    }
+       warnings.push({
+         name: p.Employee_Name,
+         phone: p.Employee_PhoneNumber,
+         success: notify.success,
+         error: notify.error || null,
+       });
+     }
+
 
     return res.status(200).json({
       success: true,
