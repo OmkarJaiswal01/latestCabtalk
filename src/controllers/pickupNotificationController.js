@@ -1,3 +1,5 @@
+// controllers/pickupNotificationController.js
+
 import Passenger from "../models/Passenger.js";
 import Asset from "../models/assetModel.js";
 import Journey from "../models/JourneyModel.js";
@@ -22,19 +24,19 @@ export const sendPickupConfirmation = async (req, res) => {
       });
     }
 
-    // Step 1: Find the asset that includes the passenger
+    // Step 1: Load asset & populate passengers
     const asset = await Asset.findOne({
-      "passengers.passengers.passenger": { $exists: true },
+      "passengers.passengers.passenger": { $exists: true }
     }).populate({
       path: "passengers.passengers.passenger",
       model: "Passenger",
-      select: "Employee_PhoneNumber Employee_Name",
+      select: "Employee_PhoneNumber Employee_Name"
     });
     if (!asset) {
       return res.status(404).json({ success: false, message: "Asset not found." });
     }
 
-    // Step 1b: Locate the picked passenger and collect shift list
+    // Step 1b: Find picked passenger and current shift list
     let pickedPassenger = null;
     let currentShiftPassengers = [];
     for (const shift of asset.passengers) {
@@ -48,53 +50,62 @@ export const sendPickupConfirmation = async (req, res) => {
       }
     }
     if (!pickedPassenger) {
-      return res.status(404).json({ success: false, message: "Picked passenger not found in asset." });
+      return res.status(404).json({
+        success: false,
+        message: "Picked passenger not found in asset."
+      });
     }
 
-    // Step 2: Find the latest journey for this asset
+    // Step 2: Get latest journey for this asset
     const journey = await Journey.findOne({ Asset: asset._id })
       .sort({ createdAt: -1 })
       .populate({
         path: "boardedPassengers.passenger",
-        select: "Employee_PhoneNumber Employee_Name",
+        select: "Employee_PhoneNumber Employee_Name"
       });
     if (!journey) {
-      return res.status(404).json({ success: false, message: "No journey found for asset." });
+      return res.status(404).json({
+        success: false,
+        message: "No journey found for asset."
+      });
     }
 
-    // Step 3: Prevent double‐boarding
-    const alreadyBoarded = journey.boardedPassengers.some(bp =>
-      bp.passenger._id.toString() === pickedPassenger._id.toString()
-    );
-    if (alreadyBoarded) {
-      return res.status(400).json({ success: false, message: "Passenger already boarded." });
+    // Step 3: Prevent double boarding
+    const alreadyBoardedByPhone = journey.boardedPassengers.some(bp => {
+      const bpPhone = (bp.passenger.Employee_PhoneNumber || "").replace(/\D/g, "");
+      return bpPhone === cleanedPhone;
+    });
+    if (alreadyBoardedByPhone) {
+      return res.status(400).json({
+        success: false,
+        message: "Passenger already boarded."
+      });
     }
 
-    // Step 4: Mark passenger as boarded
+    // Step 4: Mark as boarded & save
     journey.boardedPassengers.push({ passenger: pickedPassenger._id });
     await journey.save();
 
-    // Step 5: Send pickup confirmation to the newly boarded passenger
+    // Step 5: Send confirmation to the boarded passenger
     const confirmation = await sendPickupConfirmationMessage(
       pickedPassenger.Employee_PhoneNumber,
       pickedPassenger.Employee_Name
     );
 
-    // Step 6: Notify only the *still‐unboarded* passengers in the same shift
+    // Step 6: Notify only the still-unboarded shift passengers
     const warnings = [];
-    // Build a set of all boarded IDs (including the one we just added)
+    // build set of all cleaned phone numbers already boarded
     const boardedSet = new Set(
-      journey.boardedPassengers.map(bp => bp.passenger.toString())
+      journey.boardedPassengers
+        .map(bp => bp.passenger.Employee_PhoneNumber || "")
+        .map(num => num.replace(/\D/g, ""))
     );
 
     for (const p of currentShiftPassengers) {
-      // Skip:
-      //  • any null/undefined slots
-      //  • *all* passengers already in boardedSet
-      //  • those without a phone number
-      if (!p || boardedSet.has(p._id.toString()) || !p.Employee_PhoneNumber) {
-        continue;
-      }
+      if (!p || !p.Employee_PhoneNumber) continue;
+      const phoneClean = p.Employee_PhoneNumber.replace(/\D/g, "");
+      // skip everyone whose number is already in boardedSet
+      if (boardedSet.has(phoneClean)) continue;
 
       const notify = await sendOtherPassengerSameShiftUpdateMessage(
         p.Employee_PhoneNumber,
@@ -105,29 +116,27 @@ export const sendPickupConfirmation = async (req, res) => {
         name: p.Employee_Name,
         phone: p.Employee_PhoneNumber,
         success: notify.success,
-        error: notify.error || null,
+        error: notify.error || null
       });
     }
 
-    // Final response
     return res.status(200).json({
       success: true,
-      message: "Confirmation sent to picked passenger and unboarded shift‐mates updated.",
+      message: "Confirmation sent to picked passenger; unboarded shift‑mates updated.",
       pickedPassenger: {
         name: pickedPassenger.Employee_Name,
         phone: pickedPassenger.Employee_PhoneNumber,
-        confirmation,
+        confirmation
       },
       notifiedPassengers: warnings,
-      boardedCount: journey.boardedPassengers.length,
+      boardedCount: journey.boardedPassengers.length
     });
-
   } catch (err) {
     console.error("Pickup error:", err);
     return res.status(500).json({
       success: false,
       message: "Server error",
-      error: err.message,
+      error: err.message
     });
   }
 };
