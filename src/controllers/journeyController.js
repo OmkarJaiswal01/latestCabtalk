@@ -168,7 +168,7 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
       return;
     }
 
-    // double‑boarding check by phone
+    // Double‑boarding check by phone
     const cleanedPhone = passengerPhone.replace(/\D/g, "");
     const alreadyBoarded = journey.boardedPassengers.some(bp => {
       const bpPhone = (bp.passenger.Employee_PhoneNumber || "").replace(/\D/g, "");
@@ -179,7 +179,7 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
       return;
     }
 
-    // board & save
+    // Board & save
     journey.Occupancy += 1;
     journey.boardedPassengers.push({
       passenger: passenger._id,
@@ -189,23 +189,25 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
     await journey.save();
     if (req.app.get("io")) req.app.get("io").emit("journeyUpdated", journey);
 
-    // confirm to driver
+    // Driver confirmation
     await sendWhatsAppMessage(waId, "✅ Passenger confirmed. Thank you!");
 
     const jt = (journey.Journey_Type || "").toLowerCase();
     if (jt === "pickup") {
-      // pickup template to the boarded passenger
+      // 1) Pickup template to boarded passenger
       await sendPickupConfirmationMessage(
         passenger.Employee_PhoneNumber,
         passenger.Employee_Name
       );
 
-      // notify unboarded by phone set
+      // 2) Notify unboarded by phone set
       const boardedSet = new Set(
         journey.boardedPassengers
           .map(bp => bp.passenger.Employee_PhoneNumber || "")
           .map(num => num.replace(/\D/g, ""))
       );
+      boardedSet.add(cleanedPhone);
+
       for (const { passenger: pDoc } of thisShift.passengers) {
         const phoneClean = (pDoc.Employee_PhoneNumber || "").replace(/\D/g, "");
         if (!phoneClean || boardedSet.has(phoneClean)) continue;

@@ -93,18 +93,28 @@ export const sendPickupConfirmation = async (req, res) => {
     );
 
     // Step 6: Notify only the still-unboarded shift passengers
+       // … after Step 5 …
+    // Step 6: Notify only the still-unboarded shift passengers
     const warnings = [];
-    // build set of all cleaned phone numbers already boarded
-    const boardedSet = new Set(
-      journey.boardedPassengers
-        .map(bp => bp.passenger.Employee_PhoneNumber || "")
-        .map(num => num.replace(/\D/g, ""))
-    );
+   const boardedSet = new Set(
+     journey.boardedPassengers
+       .map(bp => bp.passenger.Employee_PhoneNumber || "")
+       .map(num => num.replace(/\D/g, ""))
+  );
++   // build a set of ALL boarded phones, including the one we just added
+// +   const boardedSet = new Set(
+// +     journey.boardedPassengers
+// +       .map(bp => bp.passenger.Employee_PhoneNumber || "")
+// +       .map(num => num.replace(/\D/g, ""))
+// +   );
++   // make sure to include the just‑boarded passenger’s number
++   boardedSet.add(cleanedPhone);
 
     for (const p of currentShiftPassengers) {
       if (!p || !p.Employee_PhoneNumber) continue;
+
       const phoneClean = p.Employee_PhoneNumber.replace(/\D/g, "");
-      // skip everyone whose number is already in boardedSet
+      // skip everyone whose number is already boarded
       if (boardedSet.has(phoneClean)) continue;
 
       const notify = await sendOtherPassengerSameShiftUpdateMessage(
@@ -119,6 +129,7 @@ export const sendPickupConfirmation = async (req, res) => {
         error: notify.error || null
       });
     }
+
 
     return res.status(200).json({
       success: true,
