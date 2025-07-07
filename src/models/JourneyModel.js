@@ -10,6 +10,7 @@ const journeySchema = new mongoose.Schema({
     Driver:                { type: mongoose.Schema.Types.ObjectId, ref: "Driver", required: true, index: true },
     Asset:                 { type: mongoose.Schema.Types.ObjectId, ref: "Asset", required: true, index: true },
     Journey_Type:          { type: String, required: true },
+    Journey_shift:         { type: String, required: true },
     Occupancy:             { type: Number, required: true },
     SOS_Status:            { type: Boolean, default: false },
     boardedPassengers:     { type: [boardingEventSchema], default: [] },

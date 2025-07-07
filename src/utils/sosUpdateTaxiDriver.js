@@ -25,13 +25,26 @@ export async function sosUpdateTaxiDriver(sosId) {
     console.error("[ERROR] Broken asset not found");
     return { success: false, error: "Broken asset not found" };
   }
-  const passengers = await Passenger.find({ _id: { $in: brokenAsset.passengers || [] } })
+
+  const rosterIds = Array.isArray(brokenAsset.passengers)
+    ? brokenAsset.passengers
+        .filter(block => block.shift === sos.sos_shift)
+        .flatMap(block => block.passengers.map(ps => ps.passenger))
+    : [];
+  const passengers = await Passenger.find({ _id: { $in: rosterIds } })
     .select("Employee_Name Employee_PhoneNumber Employee_Address")
     .lean();
   let passengerList = passengers.length
-    ? passengers.map(p => `${p.Employee_Name}, ${p.Employee_PhoneNumber}, ${p.Employee_Address}`).join(" | ")
+    ? passengers
+        .map(
+          p => `${p.Employee_Name}, ${p.Employee_PhoneNumber}, ${p.Employee_Address}`
+        )
+        .join(" | ")
     : "No passengers listed";
-  passengerList = passengerList.replace(/[\r\n\t]+/g, " ").replace(/\s{2,}/g, " ").trim();
+  passengerList = passengerList
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 
   // 4. Get latest taxi (newAsset)
   const latestTaxi = await Taxi.findOne({}).sort({ createdAt: -1 }).lean();
@@ -50,10 +63,12 @@ export async function sosUpdateTaxiDriver(sosId) {
   const url = `${WATI_BASE}/sendTemplateMessage?whatsappNumber=${phone}`;
   const payload = {
     template_name: "car_break_down_update_new_rider_final",
-    broadcast_name: `car_break_down_update_new_rider_final_${new Date().toISOString().replace(/[:.-]/g, "")}`,
+    broadcast_name: `car_break_down_update_new_rider_final_${new Date()
+      .toISOString()
+      .replace(/[:.-]/g, "")}`,
     parameters: [
-      { name: "new_driver_name",  value: latestTaxi.taxiDriverName },
-      { name: "passenger_list",   value: passengerList }
+      { name: "new_driver_name", value: latestTaxi.taxiDriverName },
+      { name: "passenger_list", value: passengerList },
     ],
   };
 
@@ -75,21 +90,23 @@ export async function sosUpdateTaxiDriver(sosId) {
     session.startTransaction();
     const journey = await Journey.findOne({ Asset: brokenAsset._id }).session(session);
     if (journey) {
-      const alreadyEnded = await EndJourney.findOne({ JourneyId: journey._id }).session(session);
+      const alreadyEnded = await EndJourney.findOne({
+        JourneyId: journey._id,
+      }).session(session);
       if (!alreadyEnded) {
         const endedJourney = new EndJourney({
           JourneyId: journey._id,
-          Driver:              journey.Driver,
-          Asset:               journey.Asset,
-          Journey_Type:        journey.Journey_Type,
-          Occupancy:           journey.Occupancy,
-          hadSOS:              journey.SOS_Status,
-          startedAt:           journey.createdAt,
-          boardedPassengers:   journey.boardedPassengers.map(evt => ({
-                                passenger: evt.passenger,
-                                boardedAt: evt.boardedAt
-                              })),
-          processedWebhookEvents: journey.processedWebhookEvents
+          Driver: journey.Driver,
+          Asset: journey.Asset,
+          Journey_Type: journey.Journey_Type,
+          Occupancy: journey.Occupancy,
+          hadSOS: journey.SOS_Status,
+          startedAt: journey.createdAt,
+          boardedPassengers: journey.boardedPassengers.map(evt => ({
+            passenger: evt.passenger,
+            boardedAt: evt.boardedAt,
+          })),
+          processedWebhookEvents: journey.processedWebhookEvents,
         });
         await endedJourney.save({ session });
         await Journey.findByIdAndDelete(journey._id, { session });

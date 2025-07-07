@@ -73,11 +73,12 @@ export const getEndedJourneys = async (req, res) => {
   try {
     let { date } = req.query;
     if (!date) {
-      const istNow = new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
-      date = new Date(istNow).toISOString().split("T")[0];
+      date = new Date().toLocaleDateString("en-CA", {
+        timeZone: "Asia/Kolkata",
+      });
     }
-    const startOfDay = new Date(`${date}T00:00:00.000Z`);
-    const endOfDay   = new Date(`${date}T23:59:59.999Z`);
+    const startOfDay = new Date(`${date}T00:00:00.000+05:30`);
+    const endOfDay = new Date(`${date}T23:59:59.999+05:30`);
     const endedJourneys = await EndJourney.find({
       endedAt: { $gte: startOfDay, $lt: endOfDay }
     })

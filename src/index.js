@@ -13,6 +13,7 @@ import endJourneyRoutes from "./routes/endJourneyRoutes.js";
 import sosRoutes from "./routes/sosRoutes.js";
 import passengerListRoutes from "./routes/passengerListRoutes.js";
 import taxiRoutes from "./routes/taxiRoutes.js";
+import notificationRoutes from "./routes/notificationRoutes.js  ";
 
 const app = express();
 const server = http.createServer(app);
@@ -46,11 +47,12 @@ app.use("/api/v1", journeyRoutes);
 app.use("/api/v1", endJourneyRoutes);
 app.use("/api/v1/pass", passengerListRoutes);
 app.use("/api/v1/sos", taxiRoutes);
+app.use("/api/v1", notificationRoutes);
 
 io.on("connection", (socket) => {
-  console.log(`Client connected: ${socket.id}`);
+  // console.log(`Client connected: ${socket.id}`);
   socket.on("disconnect", () => {
-    console.log(`Client disconnected: ${socket.id}`);
+    // console.log(`Client disconnected: ${socket.id}`);
   });
 });
 app.set("io", io);

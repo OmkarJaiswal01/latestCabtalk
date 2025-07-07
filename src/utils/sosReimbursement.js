@@ -14,7 +14,11 @@ export async function sosReimbursement(sosId) {
     console.error(`[ERROR] Broken asset not found: ${sos.asset}`);
     return { success: false, sentTo: [], failedTo: [], error: "Asset not found" };
   }
-  const roster = Array.isArray(brokenAsset.passengers) ? brokenAsset.passengers : [];
+  const roster = Array.isArray(brokenAsset.passengers)
+    ? brokenAsset.passengers.flatMap((shift) =>
+        shift.passengers.map((ps) => ps.passenger)
+      )
+    : [];
   if (roster.length === 0) {
     return { success: true, sentTo: [], failedTo: [] };
   }

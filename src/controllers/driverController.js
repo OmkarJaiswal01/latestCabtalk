@@ -1,6 +1,5 @@
 import Driver from "../models/driverModel.js";
 import { asyncHandler } from "../middlewares/asyncHandler.js";
- 
 export const addDriver = asyncHandler(async (req, res) => {
   const { name, phoneNumber, vehicleNumber, licenseImage } = req.body;
   if (!name || !phoneNumber || !vehicleNumber || !licenseImage) {

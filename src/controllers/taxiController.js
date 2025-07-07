@@ -1,6 +1,7 @@
 import Taxi from "../models/TaxiModel.js";
 import { sosUpdateTaxiDriver } from "../utils/sosUpdateTaxiDriver.js";
 import { sosUpdateTaxiPassenger } from "../utils/sosUpdateTaxiPassanger.js";
+import SOS from "../models/sosModel.js";
 
 export const createTaxi = async (req, res) => {
   try {
@@ -57,12 +58,16 @@ export const notifyTaxiDriver = async (req, res) => {
 
 export const notifyTaxiPassenger = async (req, res) => {
   try {
-    const { sosId } = req.params;
-    const result = await sosUpdateTaxiPassenger(sosId);
+    const result = await sosUpdateTaxiPassenger(req.params.sosId);
     if (!result.success) {
       return res.status(400).json({ success: false, error: result.error });
     }
-    return res.status(200).json({ success: true, data: result });
+   const updatedSos = await SOS.findById(req.params.sosId).lean();
+    return res.status(200).json({
+      success: true,
+      notifications: result,
+      sos: updatedSos   
+    });
   } catch (err) {
     console.error("notifyTaxiPassenger Error:", err);
     return res

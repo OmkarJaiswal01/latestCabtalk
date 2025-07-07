@@ -11,19 +11,19 @@ import { sosUpdateDriver } from "../utils/sosUpdateDriver.js";
 import { sosReimbursement } from "../utils/sosReimbursement.js";
 
 export const createSOS = async (req, res) => {
+  const { user_type, phone_no, sos_type } = req.body;
+  if (!user_type || !phone_no || !sos_type) {
+    return res.status(400).json({
+      success: false,
+      message: "user_type, phone_no, and sos_type are required.",
+    });
+  }
+  const lowerType = user_type.toLowerCase();
+  let brokenAssetId = null;
+  let journey = null;
+  const userDetails = { name: "", vehicle_no: "" };
+
   try {
-    const { user_type, phone_no, sos_type } = req.body;
-
-    if (!user_type || !phone_no || !sos_type) {
-      return res.status(400).json({
-        success: false,
-        message: "user_type, phone_no, and sos_type are required.",
-      });
-    }
-    const lowerType = user_type.toLowerCase();
-    let brokenAssetId = null;
-    let userDetails = { name: "", vehicle_no: "" };
-
     if (lowerType === "driver") {
       const driver = await Driver.findOne({ phoneNumber: phone_no });
       if (!driver) {
@@ -34,19 +34,21 @@ export const createSOS = async (req, res) => {
       userDetails.name = driver.name;
       userDetails.vehicle_no = driver.vehicleNumber;
 
-      let journey = await Journey.findOne({
+      journey = await Journey.findOne({
         Driver: driver._id,
         SOS_Status: false,
       });
-      if (journey) {
-        journey.SOS_Status = true;
-        brokenAssetId = journey.Asset;
-        await journey.save();
+      if (!journey) {
+        journey = await Journey.findOne({ Driver: driver._id }).sort({
+          createdAt: -1,
+        });
+      }
+      if (!journey) {
+        console.log("[createSOS] no prior journey found for driver");
       } else {
-        journey = await Journey.findOne({ Driver: driver._id });
-        if (journey) {
-          brokenAssetId = journey.Asset;
-        }
+        brokenAssetId = journey.Asset;
+        journey.SOS_Status = true;
+        await journey.save();
       }
     } else if (lowerType === "passenger") {
       const passenger = await Passenger.findOne({
@@ -58,19 +60,11 @@ export const createSOS = async (req, res) => {
           .json({ success: false, message: "Passenger not found" });
       }
       userDetails.name = passenger.Employee_Name;
-
       if (passenger.asset) {
         brokenAssetId = passenger.asset;
-        const assetDoc = await Asset.findById(brokenAssetId).populate(
-          "driver",
-          "vehicleNumber"
-        );
-        if (assetDoc?.driver) {
-          userDetails.vehicle_no = assetDoc.driver.vehicleNumber;
-        }
       } else {
         const assetDoc = await Asset.findOne({
-          passengers: passenger._id,
+          "passengers.passengers.passenger": passenger._id,
           isActive: true,
         }).populate("driver", "vehicleNumber");
         if (assetDoc) {
@@ -80,7 +74,7 @@ export const createSOS = async (req, res) => {
       }
 
       if (brokenAssetId) {
-        let journey = await Journey.findOne({
+        journey = await Journey.findOne({
           Asset: brokenAssetId,
           SOS_Status: false,
         });
@@ -89,12 +83,16 @@ export const createSOS = async (req, res) => {
           await journey.save();
         }
       }
+    } else {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid user_type" });
     }
 
     if (!brokenAssetId) {
-      const pendingByPhone = await SOS.findOne({ phone_no, status: "pending" });
-      if (pendingByPhone) {
-        brokenAssetId = pendingByPhone.asset;
+      const pending = await SOS.findOne({ phone_no, status: "pending" });
+      if (pending) {
+        brokenAssetId = pending.asset;
       }
     }
 
@@ -103,6 +101,24 @@ export const createSOS = async (req, res) => {
         success: false,
         message:
           "No active journey or prior SOS found; cannot determine asset.",
+      });
+    }
+    if (!journey) {
+      journey = await Journey.findOne({ Asset: brokenAssetId })
+        .sort({ createdAt: -1 })
+        .lean();
+      if (journey) {
+        console.log(
+          "[createSOS] loaded journey for shift in fallback:",
+          journey._id
+        );
+      }
+    }
+    if (!journey || !journey.Journey_shift) {
+      console.error("[createSOS] failed to determine journey_shift");
+      return res.status(500).json({
+        success: false,
+        message: "Internal error: could not determine journey shift.",
       });
     }
 
@@ -140,12 +156,11 @@ export const createSOS = async (req, res) => {
       phone_no,
       sos_type,
       asset: brokenAssetId,
+      sos_shift: journey.Journey_shift,
       userDetails,
     });
     await sos.save();
-
-    const io = req.app.get("io");
-    io.emit("newSOS", sos);
+    req.app.get("io").emit("newSOS", sos);
 
     return res.status(201).json({
       success: true,
@@ -160,29 +175,36 @@ export const createSOS = async (req, res) => {
 export const getSOS = async (req, res) => {
   try {
     let { date } = req.query;
-    const istNow = new Date().toLocaleString("en-US", {
-      timeZone: "Asia/Kolkata",
-    });
-    if (!date) date = new Date(istNow).toISOString().split("T")[0];
+    if (!date) {
+      date = new Date().toLocaleDateString("en-CA", {
+        timeZone: "Asia/Kolkata",
+      });
+    }
     const start = new Date(`${date}T00:00:00.000+05:30`);
     const end = new Date(`${date}T23:59:59.999+05:30`);
 
-    const sosList = await SOS.find({
-      createdAt: { $gte: start, $lt: end },
-    })
+    const sosList = await SOS.find({ createdAt: { $gte: start, $lt: end } })
       .sort({ createdAt: -1 })
       .populate({
         path: "asset",
-        populate: { path: "driver", select: "name vehicleNumber" },
+        populate: [
+          { path: "driver", select: "name vehicleNumber" },
+          {
+            path: "passengers.passengers.passenger",
+            model: "Passenger",
+            select:
+              "Employee_ID Employee_Name Employee_PhoneNumber Employee_ShiftTiming",
+          },
+        ],
       })
       .populate({
         path: "newAsset",
         populate: { path: "driver", select: "name vehicleNumber" },
       })
       .lean();
-    res.status(200).json({ success: true, sos: sosList });
+    return res.status(200).json({ success: true, sos: sosList });
   } catch (err) {
-    res
+    return res
       .status(500)
       .json({ success: false, message: "Error fetching SOS data" });
   }
@@ -190,11 +212,18 @@ export const getSOS = async (req, res) => {
 
 export const getSOSByID = async (req, res) => {
   try {
-    const { id } = req.params;
-    const sos = await SOS.findById(id)
+    const sos = await SOS.findById(req.params.id)
       .populate({
         path: "asset",
-        populate: { path: "driver", select: "name vehicleNumber" },
+        populate: [
+          { path: "driver", select: "name vehicleNumber" },
+          {
+            path: "passengers.passengers.passenger",
+            model: "Passenger",
+            select:
+              "Employee_ID Employee_Name Employee_PhoneNumber Employee_ShiftTiming",
+          },
+        ],
       })
       .populate({
         path: "newAsset",
@@ -203,9 +232,9 @@ export const getSOSByID = async (req, res) => {
     if (!sos) {
       return res.status(404).json({ success: false, message: "SOS not found" });
     }
-    res.status(200).json({ success: true, sos });
+    return res.status(200).json({ success: true, sos });
   } catch (err) {
-    res.status(500).json({ success: false, message: "Server error" });
+    return res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
@@ -237,30 +266,23 @@ export const resolveSOS = async (req, res) => {
 
 export const transferPassengersForSos = async (req, res) => {
   const session = await mongoose.startSession();
+  let passengerNotification, driverNotification;
 
   try {
     await session.startTransaction();
-
     const { id } = req.params;
     const { newAssetId } = req.body;
-
     if (!newAssetId) {
       await session.abortTransaction();
-      return res
-        .status(400)
-        .json({ success: false, message: "newAssetId is required" });
+      return res.status(400).json({ success: false, message: "newAssetId is required" });
     }
-
     const sos = await SOS.findById(id).session(session);
     if (!sos) {
       await session.abortTransaction();
-      return res.status(404).json({ success: false, message: "SOS not found" });
     }
     if (sos.status !== "pending") {
       await session.abortTransaction();
-      return res
-        .status(400)
-        .json({ success: false, message: "SOS already resolved" });
+      return res.status(400).json({ success: false, message: "SOS already resolved" });
     }
 
     const brokenAssetId = sos.asset.toString();
@@ -274,61 +296,58 @@ export const transferPassengersForSos = async (req, res) => {
 
     const [brokenAsset, newAsset] = await Promise.all([
       Asset.findById(brokenAssetId)
-        .populate("driver", "name phoneNumber")
-        .session(session),
+           .populate("driver", "name phoneNumber")
+           .session(session),
       Asset.findById(newAssetId)
-        .populate("driver", "name phoneNumber vehicleNumber")
-        .session(session),
+           .populate("driver", "name phoneNumber vehicleNumber")
+           .session(session),
     ]);
-    if (!brokenAsset) {
+    if (!brokenAsset || !newAsset) {
       await session.abortTransaction();
-      return res
-        .status(404)
-        .json({ success: false, message: "Broken asset not found" });
+      return res.status(404).json({ success: false, message: "Asset lookup failed" });
     }
-    if (!newAsset) {
+    if (!brokenAsset.isActive || newAsset.isActive) {
       await session.abortTransaction();
-      return res
-        .status(404)
-        .json({ success: false, message: "New asset not found" });
+      return res.status(400).json({
+        success: false,
+        message: !brokenAsset.isActive
+          ? "Broken asset is not active"
+          : "New asset is already active",
+      });
     }
-    if (!brokenAsset.isActive) {
-      await session.abortTransaction();
-      return res
-        .status(400)
-        .json({ success: false, message: "Broken asset is not active" });
+    const oldJourney = await Journey.findOne({ Asset: brokenAssetId }).session(session);
+    let roster = [];
+    let activeBlock = null;
+    if (oldJourney && oldJourney.Journey_shift) {
+      const shiftName = oldJourney.Journey_shift;
+      if (Array.isArray(brokenAsset.passengers)) {
+        activeBlock = brokenAsset.passengers.find(blk => blk.shift === shiftName);
+        if (activeBlock && Array.isArray(activeBlock.passengers)) {
+          roster = activeBlock.passengers.map(ps => ps.passenger.toString());
+        }
+      }
     }
-    if (newAsset.isActive) {
-      await session.abortTransaction();
-      return res
-        .status(400)
-        .json({ success: false, message: "New asset is already active" });
-    }
-    const roster = Array.isArray(brokenAsset.passengers)
-      ? brokenAsset.passengers
-      : [];
     await Promise.all([
       Asset.findByIdAndUpdate(
         newAssetId,
-        { passengers: roster, isActive: true },
+        { passengers: activeBlock ? [activeBlock] : [], isActive: true },
         { session }
       ),
-      Asset.findByIdAndUpdate(brokenAssetId, { isActive: false }, { session }),
+      Asset.findByIdAndUpdate(
+        brokenAssetId,
+        { isActive: false },
+        { session }
+      ),
     ]);
-
     await updateRideStatus(newAsset.driver.phoneNumber, true);
     await updateRideStatus(brokenAsset.driver.phoneNumber, false);
-
     if (roster.length) {
       await Passenger.updateMany(
         { _id: { $in: roster } },
-        { asset: newAssetId }
-      ).session(session);
+        { asset: newAssetId },
+        { session }
+      );
     }
-
-    const oldJourney = await Journey.findOne({ Asset: brokenAssetId }).session(
-      session
-    );
 
     let endedJourneyDoc = null;
     if (oldJourney) {
@@ -340,73 +359,39 @@ export const transferPassengersForSos = async (req, res) => {
         Occupancy: oldJourney.Occupancy,
         hadSOS: oldJourney.SOS_Status,
         startedAt: oldJourney.createdAt,
-        boardedPassengers: oldJourney.boardedPassengers.map((evt) => ({
+        boardedPassengers: oldJourney.boardedPassengers.map(evt => ({
           passenger: evt.passenger,
           boardedAt: evt.boardedAt,
         })),
         processedWebhookEvents: oldJourney.processedWebhookEvents,
       });
       endedJourneyDoc = await endedJourney.save({ session });
-
       await Journey.findByIdAndDelete(oldJourney._id).session(session);
-
       req.app.get("io")?.emit("journeyEnded", endedJourneyDoc);
-    } else {
-      console.log(
-        "[INFO] No active journey found for broken asset:",
-        brokenAssetId
-      );
     }
-    const newJourneyData = {
+    const newJourney = new Journey({
       Driver: newAsset.driver._id,
       Asset: newAssetId,
-      Journey_Type: oldJourney.Journey_Type,
-      Occupancy: oldJourney.Occupancy,
+      Journey_Type: oldJourney?.Journey_Type,
+      Journey_shift: oldJourney?.Journey_shift,
+      Occupancy: oldJourney?.Occupancy,
       SOS_Status: false,
-      boardedPassengers: oldJourney.boardedPassengers,
-      processedWebhookEvents: oldJourney.processedWebhookEvents,
-      originalStart: oldJourney.createdAt,
+      boardedPassengers: oldJourney?.boardedPassengers,
+      processedWebhookEvents: oldJourney?.processedWebhookEvents,
+      originalStart: oldJourney?.createdAt,
       previousJourney: endedJourneyDoc?._id || null,
       triggeredBySOS: sos._id,
-    };
-    const newJourney = new Journey(newJourneyData);
+    });
     await newJourney.save({ session });
     req.app.get("io")?.emit("newJourney", newJourney);
     sos.status = "resolved";
     sos.sosSolution = "Asset Assigned";
     sos.newAsset = newAssetId;
     await sos.save({ session });
-    const passengerNotification = await sosUpdatePassengers(
-      sos._id,
-      newAssetId
-    );
-    const driverNotification = await sosUpdateDriver(sos._id, newAssetId);
-
-    req.app.get("io")?.emit("passengersNotified", {
-      sosId: id,
-      count: passengerNotification.sentTo?.length || 0,
-    });
-    req.app.get("io")?.emit("driverNotified", {
-      sosId: id,
-      to: driverNotification.to,
-      success: driverNotification.success,
-    });
+    passengerNotification = await sosUpdatePassengers(sos._id, newAssetId, roster);
+    driverNotification = await sosUpdateDriver(sos._id, newAssetId);
     await session.commitTransaction();
-
-    const populatedNewAsset = await Asset.findById(newAssetId).populate(
-      "driver",
-      "name vehicleNumber"
-    );
-    return res.status(200).json({
-      success: true,
-      newAsset: populatedNewAsset,
-      notifications: {
-        passengers: passengerNotification,
-        driver: driverNotification,
-      },
-    });
   } catch (err) {
-    console.error("[ERROR] transferPassengersForSos failed:", err);
     await session.abortTransaction();
     return res
       .status(500)
@@ -414,6 +399,16 @@ export const transferPassengersForSos = async (req, res) => {
   } finally {
     session.endSession();
   }
+  const populatedNewAsset = await Asset.findById(req.body.newAssetId)
+    .populate("driver", "name vehicleNumber");
+  return res.status(200).json({
+    success: true,
+    newAsset: populatedNewAsset,
+    notifications: {
+      passengers: passengerNotification,
+      driver: driverNotification,
+    },
+  });
 };
 
 const updateRideStatus = async (phoneNumber, isActive) => {

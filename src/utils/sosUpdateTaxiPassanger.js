@@ -5,7 +5,6 @@ import Passenger from "../models/Passenger.js";
 import Taxi from "../models/TaxiModel.js";
 
 export async function sosUpdateTaxiPassenger(sosId) {
-
   let sos;
   try {
     sos = await SOS.findById(sosId);
@@ -13,7 +12,6 @@ export async function sosUpdateTaxiPassenger(sosId) {
   } catch (err) {
     return { success: false, sentTo: [], failedTo: [], error: err.message };
   }
-
   let brokenAsset;
   try {
     brokenAsset = await Asset.findById(sos.asset).populate(
@@ -24,36 +22,32 @@ export async function sosUpdateTaxiPassenger(sosId) {
   } catch (err) {
     return { success: false, sentTo: [], failedTo: [], error: err.message };
   }
-
-  // ✅ Find the new Taxi from the Taxi collection — example: latest added taxi
   let taxi;
   try {
-    taxi = await Taxi.findOne().sort({ createdAt: -1 }).lean(); // adjust logic as needed
+    taxi = await Taxi.findOne().sort({ createdAt: -1 }).lean();
     if (!taxi) throw new Error("No replacement taxi found in the database");
   } catch (err) {
     return { success: false, sentTo: [], failedTo: [], error: err.message };
   }
-
-  const roster = Array.isArray(brokenAsset.passengers)
-    ? brokenAsset.passengers
+  const rosterIds = Array.isArray(brokenAsset.passengers)
+    ? brokenAsset.passengers.flatMap((shift) =>
+        shift.passengers.map((ps) => ps.passenger)
+      )
     : [];
-  if (roster.length === 0) {
+  if (rosterIds.length === 0) {
     return { success: true, sentTo: [], failedTo: [] };
   }
-
   let passengers;
   try {
-    passengers = await Passenger.find({ _id: { $in: roster } })
+    passengers = await Passenger.find({ _id: { $in: rosterIds } })
       .select("Employee_Name Employee_PhoneNumber")
       .lean();
   } catch (err) {
     return { success: false, sentTo: [], failedTo: [], error: err.message };
   }
-
   const receivers = passengers.map((p) => {
     const rawPhone = p.Employee_PhoneNumber || "";
     const whatsappNumber = rawPhone.replace(/\D/g, "");
-
     return {
       whatsappNumber,
       customParams: [
@@ -88,7 +82,6 @@ export async function sosUpdateTaxiPassenger(sosId) {
         timeout: 10000,
       }
     );
-
     const results = response.data.results || response.data.messages || [];
     results.forEach((r) => {
       (r.status === "success" ? sentTo : failedTo).push(r.to);
@@ -97,6 +90,14 @@ export async function sosUpdateTaxiPassenger(sosId) {
     failedTo = receivers.map((r) => r.whatsappNumber);
     return { success: false, sentTo: [], failedTo, error: err.message };
   }
-
+  try {
+    await SOS.findByIdAndUpdate(
+      sosId,
+      { status: "resolved", sosSolution: "assignTaxi" },
+      { new: true }
+    );
+  } catch (updateErr) {
+    console.error("[WARN] Failed to update SOS resolution:", updateErr);
+  }
   return { success: true, sentTo, failedTo };
 }
