@@ -104,9 +104,9 @@ export const getJourneys = async (req, res) => {
   }
 };
 export const handleWatiWebhook = asyncHandler(async (req, res) => {
-  res.status(200).end();
+  res.sendStatus(200);
   try {
-    if (req.body.text == null) {
+    if (req.body.text != null) {
       return;
     }
     const { id: eventId, type, waId, listReply } = req.body;
@@ -117,7 +117,9 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
     const passengerPhone = listReply.title.match(/(\d{12})$/)[0];
 
     const driver = await Driver.findOne({ phoneNumber: waId });
-    if (!driver) return;
+    if (!driver) {
+      return;
+    }
     const journey = await Journey.findOne({ Driver: driver._id })
       .populate({
         path: "Asset",
@@ -132,8 +134,14 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
         "boardedPassengers.passenger",
         "Employee_Name Employee_PhoneNumber"
       );
-    if (!journey) return;
-    if (journey.processedWebhookEvents.includes(eventId)) return;
+    if (!journey) {
+      return;
+    }
+
+    journey.processedWebhookEvents = journey.processedWebhookEvents || [];
+    if (journey.processedWebhookEvents.includes(eventId)) {
+      return;
+    }
     const passenger = await Passenger.findOne({
       Employee_PhoneNumber: passengerPhone,
     });
@@ -144,9 +152,8 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
       );
       return;
     }
-
-    const thisShift = journey.Asset.passengers.find(shift =>
-      shift.passengers.some(s => s.passenger._id.equals(passenger._id))
+    const thisShift = journey.Asset.passengers.find((shift) =>
+      shift.passengers.some((s) => s.passenger._id.equals(passenger._id))
     );
     if (!thisShift) {
       await sendWhatsAppMessage(
@@ -163,15 +170,17 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
       return;
     }
     const cleanedPhone = passengerPhone.replace(/\D/g, "");
-    const alreadyBoarded = journey.boardedPassengers.some(bp => {
-      const bpPhone = (bp.passenger.Employee_PhoneNumber || "").replace(/\D/g, "");
+    const alreadyBoarded = journey.boardedPassengers.some((bp) => {
+      const bpPhone = (bp.passenger.Employee_PhoneNumber || "").replace(
+        /\D/g,
+        ""
+      );
       return bpPhone === cleanedPhone;
     });
     if (alreadyBoarded) {
       await sendWhatsAppMessage(waId, "✅ Passenger already boarded.");
       return;
     }
-
     journey.Occupancy += 1;
     journey.boardedPassengers.push({
       passenger: passenger._id,
@@ -179,21 +188,20 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
     });
     journey.processedWebhookEvents.push(eventId);
     await journey.save();
-
     if (req.app.get("io")) {
       req.app.get("io").emit("journeyUpdated", journey);
     }
     await sendWhatsAppMessage(waId, "✅ Passenger confirmed. Thank you!");
-
     const jt = (journey.Journey_Type || "").toLowerCase();
     if (jt === "pickup") {
       await sendPickupConfirmationMessage(
         passenger.Employee_PhoneNumber,
         passenger.Employee_Name
       );
-
       const boardedSet = new Set(
-        journey.boardedPassengers.map(bp => bp.passenger.Employee_PhoneNumber || "").map(num => num.replace(/\D/g, ""))
+        journey.boardedPassengers.map((bp) =>
+          (bp.passenger.Employee_PhoneNumber || "").replace(/\D/g, "")
+        )
       );
       boardedSet.add(cleanedPhone);
 
