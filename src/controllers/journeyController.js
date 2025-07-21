@@ -9,23 +9,30 @@ import { sendOtherPassengerSameShiftUpdateMessage } from "../utils/InformOtherPa
 import { sendDropConfirmationMessage } from "../utils/dropConfirmationMsg.js";
 import { startRideUpdatePassengerController } from "../utils/rideStartUpdatePassenger.js"; 
 
+
+
 export const createJourney = async (req, res) => {
+  console.log("➡️ createJourney triggered with body:", req.body);
   try {
     const { Journey_Type, vehicleNumber, Journey_shift } = req.body;
 
     if (!Journey_Type || !vehicleNumber || !Journey_shift) {
+      console.warn("⚠️ Missing required fields");
       return res.status(400).json({
         message: "Journey_Type, vehicleNumber and Journey_shift are required.",
       });
     }
 
+    console.log(`🔍 Looking for driver with vehicleNumber: ${vehicleNumber}`);
     const driver = await Driver.findOne({ vehicleNumber });
     if (!driver) {
+      console.warn("❌ Driver not found");
       return res
         .status(404)
         .json({ message: "No driver found with this vehicle number." });
     }
 
+    console.log(`🔍 Looking for asset assigned to driver ID: ${driver._id}`);
     const asset = await Asset.findOne({ driver: driver._id }).populate({
       path: "passengers.passengers.passenger",
       model: "Passenger",
@@ -33,13 +40,16 @@ export const createJourney = async (req, res) => {
     });
 
     if (!asset) {
+      console.warn("❌ No asset found for this driver");
       return res
         .status(404)
         .json({ message: "No assigned vehicle found for this driver." });
     }
 
+    console.log("🔎 Checking for existing active journey");
     const existingJourney = await Journey.findOne({ Driver: driver._id });
     if (existingJourney) {
+      console.warn("⛔ Active journey already exists");
       await sendWhatsAppMessage(
         driver.phoneNumber,
         "Please end this current ride before starting a new one."
@@ -50,6 +60,7 @@ export const createJourney = async (req, res) => {
       });
     }
 
+    console.log("🛠 Creating new journey");
     const newJourney = new Journey({
       Driver: driver._id,
       Asset: asset._id,
@@ -60,12 +71,15 @@ export const createJourney = async (req, res) => {
     });
 
     await newJourney.save();
+    console.log("✅ New journey saved:", newJourney._id);
 
     asset.isActive = true;
     await asset.save();
+    console.log("✅ Asset marked active:", asset._id);
 
-    // 🔔 Trigger ride start passenger notifications
+    // 🔔 Notify passengers of the journey start
     try {
+      console.log("📣 Notifying passengers via startRideUpdatePassengerController");
       const mockReq = {
         body: { vehicleNumber, Journey_shift },
       };
@@ -73,30 +87,37 @@ export const createJourney = async (req, res) => {
         status: (code) => ({
           json: (data) =>
             console.log(
-              `startRideUpdatePassengerController response [${code}]:`,
+              `🟢 startRideUpdatePassengerController response [${code}]:`,
               data
             ),
         }),
       };
       await startRideUpdatePassengerController(mockReq, mockRes);
     } catch (err) {
-      console.warn("Failed to notify passengers:", err.message);
+      console.error("🚨 Failed to notify passengers:", err.message);
     }
 
     const io = req.app.get("io");
-    if (io) io.emit("newJourney", newJourney);
+    if (io) {
+      console.log("📡 Emitting socket event: newJourney");
+      io.emit("newJourney", newJourney);
+    }
 
+    console.log("✅ Journey creation complete");
     return res.status(201).json({
       message: "Journey created successfully.",
       newJourney,
       updatedAsset: asset,
     });
   } catch (error) {
-    return res
-      .status(500)
-      .json({ message: "Server error", error: error.message });
+    console.error("❌ Server error in createJourney:", error.message);
+    return res.status(500).json({
+      message: "Server error",
+      error: error.message,
+    });
   }
 };
+
 
 export const getJourneys = async (req, res) => {
   try {
