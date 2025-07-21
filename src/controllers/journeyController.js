@@ -7,8 +7,7 @@ import { sendWhatsAppMessage } from "../utils/whatsappHelper.js";
 import { sendPickupConfirmationMessage } from "../utils/PickUpPassengerSendTem.js";
 import { sendOtherPassengerSameShiftUpdateMessage } from "../utils/InformOtherPassenger.js";
 import { sendDropConfirmationMessage } from "../utils/dropConfirmationMsg.js";
-import {startRideUpdatePassengerController} from "../utils/rideStartUpdatePassenger.js"
-
+import { startRideUpdatePassengerController } from "../utils/rideStartUpdatePassenger.js"; 
 
 export const createJourney = async (req, res) => {
   try {
@@ -22,9 +21,9 @@ export const createJourney = async (req, res) => {
 
     const driver = await Driver.findOne({ vehicleNumber });
     if (!driver) {
-      return res.status(404).json({
-        message: "No driver found with this vehicle number.",
-      });
+      return res
+        .status(404)
+        .json({ message: "No driver found with this vehicle number." });
     }
 
     const asset = await Asset.findOne({ driver: driver._id }).populate({
@@ -34,9 +33,9 @@ export const createJourney = async (req, res) => {
     });
 
     if (!asset) {
-      return res.status(404).json({
-        message: "No assigned vehicle found for this driver.",
-      });
+      return res
+        .status(404)
+        .json({ message: "No assigned vehicle found for this driver." });
     }
 
     const existingJourney = await Journey.findOne({ Driver: driver._id });
@@ -65,31 +64,39 @@ export const createJourney = async (req, res) => {
     asset.isActive = true;
     await asset.save();
 
+    // 🔔 Trigger ride start passenger notifications
+    try {
+      const mockReq = {
+        body: { vehicleNumber, Journey_shift },
+      };
+      const mockRes = {
+        status: (code) => ({
+          json: (data) =>
+            console.log(
+              `startRideUpdatePassengerController response [${code}]:`,
+              data
+            ),
+        }),
+      };
+      await startRideUpdatePassengerController(mockReq, mockRes);
+    } catch (err) {
+      console.warn("Failed to notify passengers:", err.message);
+    }
+
     const io = req.app.get("io");
     if (io) io.emit("newJourney", newJourney);
-
-    // Notify Passengers
-    try {
-      await startRideUpdatePassengerController(vehicleNumber, Journey_shift);
-    } catch (notifyError) {
-      console.error("Passenger notification failed:", notifyError.message);
-    }
 
     return res.status(201).json({
       message: "Journey created successfully.",
       newJourney,
       updatedAsset: asset,
     });
-
   } catch (error) {
-    console.error("Journey creation failed:", error);
-    return res.status(500).json({
-      message: "Server error",
-      error: error.message,
-    });
+    return res
+      .status(500)
+      .json({ message: "Server error", error: error.message });
   }
 };
-
 
 export const getJourneys = async (req, res) => {
   try {
