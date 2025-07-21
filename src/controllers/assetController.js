@@ -3,7 +3,7 @@ import Asset from "../models/assetModel.js";
 import Driver from "../models/driverModel.js";
 import Passenger from "../models/Passenger.js";
 import { asyncHandler } from "../middlewares/asyncHandler.js";
-import axios from "axios";
+import axios from "axios";  
 
 const updateDriverWatiStatus = async (phoneNumber, activeDriver = true) => {
   const url = `https://live-mt-server.wati.io/388428/api/v1/updateContactAttributes/${phoneNumber}`;
@@ -28,7 +28,7 @@ const updateDriverWatiStatus = async (phoneNumber, activeDriver = true) => {
 };
 export const getAvailableAssets = async (req, res) => {
   try {
-    const assets = await Asset.find({
+    const assets = await Asset.find({ 
       isActive: false,
       $expr: {
         $eq: [
