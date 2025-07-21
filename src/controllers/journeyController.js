@@ -7,7 +7,7 @@ import { sendWhatsAppMessage } from "../utils/whatsappHelper.js";
 import { sendPickupConfirmationMessage } from "../utils/PickUpPassengerSendTem.js";
 import { sendOtherPassengerSameShiftUpdateMessage } from "../utils/InformOtherPassenger.js";
 import { sendDropConfirmationMessage } from "../utils/dropConfirmationMsg.js";
-
+import {startRideUpdatePassengerController} from "../utils/rideStartUpdatePassenger.js"
 
 
 export const createJourney = async (req, res) => {
@@ -22,7 +22,9 @@ export const createJourney = async (req, res) => {
 
     const driver = await Driver.findOne({ vehicleNumber });
     if (!driver) {
-      return res.status(404).json({ message: "No driver found with this vehicle number." });
+      return res.status(404).json({
+        message: "No driver found with this vehicle number.",
+      });
     }
 
     const asset = await Asset.findOne({ driver: driver._id }).populate({
@@ -32,13 +34,20 @@ export const createJourney = async (req, res) => {
     });
 
     if (!asset) {
-      return res.status(404).json({ message: "No assigned vehicle found for this driver." });
+      return res.status(404).json({
+        message: "No assigned vehicle found for this driver.",
+      });
     }
 
     const existingJourney = await Journey.findOne({ Driver: driver._id });
     if (existingJourney) {
+      await sendWhatsAppMessage(
+        driver.phoneNumber,
+        "Please end this current ride before starting a new one."
+      );
       return res.status(400).json({
-        message: "Active journey exists. Please end the current ride before starting a new one.",
+        message:
+          "Active journey exists. Please end the current ride before starting a new one.",
       });
     }
 
@@ -56,60 +65,30 @@ export const createJourney = async (req, res) => {
     asset.isActive = true;
     await asset.save();
 
-    // Find passengers for this shift
-    const shiftGroup = asset.passengers.find((group) => group.shift === Journey_shift);
-
-    if (shiftGroup && shiftGroup.passengers.length > 0) {
-      console.log(`Sending messages to ${shiftGroup.passengers.length} passengers`);
-
-      for (const entry of shiftGroup.passengers) {
-        const passenger = entry.passenger;
-        const name = passenger?.Employee_Name || "Passenger";
-        const rawPhone = passenger?.Employee_PhoneNumber || "";
-        const phone = rawPhone.replace(/\D/g, ""); // Remove non-digit characters
-
-        if (phone) {
-          try {
-            await axios.post(
-              `https://live-mt-server.wati.io/388428/api/v1/sendTemplateMessage?whatsappNumber=${phone}`,
-              {
-                broadcast_name: `ride_started_${Date.now()}`,
-                template_name: "ride_started_update_passengers",
-                parameters: [{ name: "name", value: name }],
-              },
-              {
-                headers: {
-                  "content-type": "application/json", // ✅ FIXED content type
-                  Authorization: `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI0YmM2MmFkNC04NTQ3LTRkYzItOTc0Ni0wNmRkMjZiODYzNmMiLCJ1bmlxdWVfbmFtZSI6Im9ta2FyLmphaXN3YWxAZ3hpbmV0d29ya3MuY29tIiwibmFtZWlkIjoib21rYXIuamFpc3dhbEBneGluZXR3b3Jrcy5jb20iLCJlbWFpbCI6Im9ta2FyLmphaXN3YWxAZ3hpbmV0d29ya3MuY29tIiwiYXV0aF90aW1lIjoiMDYvMzAvMjAyNSAwNzozNzoxNSIsInRlbmFudF9pZCI6IjM4ODQyOCIsImRiX25hbWUiOiJtdC1wcm9kLVRlbmFudHMiLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOiJBRE1JTklTVFJBVE9SIiwiZXhwIjoyNTM0MDIzMDA4MDAsImlzcyI6IkNsYXJlX0FJIiwiYXVkIjoiQ2xhcmVfQUkifQ.dr6x_b4olu0EL6oJcEENiD2nMYrlQx5MWlQTJBttcqg`,
-                },
-              }
-            );
-            console.log(`✅ Message sent to ${name} (${phone})`);
-          } catch (err) {
-            console.error(`❌ Failed to send message to ${phone}:`, err?.response?.data || err.message);
-          }
-        } else {
-          console.warn(`⚠️ No valid phone number for passenger: ${name}`);
-        }
-      }
-    } else {
-      console.log(`No passengers found for shift: ${Journey_shift}`);
-    }
-
     const io = req.app.get("io");
     if (io) io.emit("newJourney", newJourney);
 
+    // Notify Passengers
+    try {
+      await startRideUpdatePassengerController(vehicleNumber, Journey_shift);
+    } catch (notifyError) {
+      console.error("Passenger notification failed:", notifyError.message);
+    }
+
     return res.status(201).json({
-      message: "Journey created and passengers notified successfully.",
+      message: "Journey created successfully.",
       newJourney,
       updatedAsset: asset,
     });
+
   } catch (error) {
-    console.error("createJourney error:", error);
-    return res.status(500).json({ message: "Server error", error: error.message });
+    console.error("Journey creation failed:", error);
+    return res.status(500).json({
+      message: "Server error",
+      error: error.message,
+    });
   }
 };
-
 
 
 export const getJourneys = async (req, res) => {
