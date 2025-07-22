@@ -77,24 +77,27 @@ export const createJourney = async (req, res) => {
     await asset.save();
     console.log("✅ Asset marked active:", asset._id);
 
-    // 🔔 Notify passengers of the journey start
-    try {
-      console.log("📣 Notifying passengers via startRideUpdatePassengerController");
-      const mockReq = {
-        body: { vehicleNumber, Journey_shift },
-      };
-      const mockRes = {
-        status: (code) => ({
-          json: (data) =>
-            console.log(
-              `🟢 startRideUpdatePassengerController response [${code}]:`,
-              data
-            ),
-        }),
-      };
-      await startRideUpdatePassengerController(mockReq, mockRes);
-    } catch (err) {
-      console.error("🚨 Failed to notify passengers:", err.message);
+    // 🔔 Notify passengers only if Journey_Type is "pickup" 
+
+    if (Journey_Type === "Pickup") {
+      try {
+        console.log("📣 Notifying passengers via startRideUpdatePassengerController");
+        const mockReq = {
+          body: { vehicleNumber, Journey_shift },
+        };
+        const mockRes = {
+          status: (code) => ({
+            json: (data) =>
+              console.log(
+                `🟢 startRideUpdatePassengerController response [${code}]:`,
+                data
+              ),
+          }),
+        };
+        await startRideUpdatePassengerController(mockReq, mockRes);
+      } catch (err) {
+        console.error("🚨 Failed to notify passengers:", err.message);
+      }
     }
 
     const io = req.app.get("io");
@@ -117,6 +120,7 @@ export const createJourney = async (req, res) => {
     });
   }
 };
+
 
 
 export const getJourneys = async (req, res) => {
