@@ -397,39 +397,17 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
   res.sendStatus(200);
 
   try {
-    console.log("📨 Received WATI webhook:", JSON.stringify(req.body));
 
-    if (req.body.text != null) {
-      console.log("🔕 Ignored: Text message detected, not interactive.");
+   if (req.body.text != null) {
+      return;
+    }
+    const { id: eventId, type, waId, listReply } = req.body;
+    if (type !== "interactive" || !listReply?.title || !/\d{12}$/.test(listReply.title) ) {
       return;
     }
 
-  const { id: eventId, type, waId, listReply } = req.body;
-    console.log(`📌 Event ID: ${eventId}, Type: ${type}, From: ${waId}`);
+    const passengerPhone = listReply.title.match(/(\d{12})$/)[0];
 
-    // Validate interaction type and title
-    if (type !== "interactive" || !listReply?.title) {
-      console.log("⚠️ Ignored: Missing interactive type or title.");
-      return;
-    }
-
-    const title = listReply.title;
-    const phoneMatch = title.match(/\b\d{10,12}\b/); // Match 10-12 digit number
-
-    if (!phoneMatch) {
-      console.log(`⚠️ No valid phone number found in title: "${title}"`);
-      return;
-    }
-
-    const passengerPhone = phoneMatch[0];
-    console.log(`📞 Passenger Phone Extracted: ${passengerPhone}`);
-
-
-    const driver = await Driver.findOne({ phoneNumber: waId });
-    if (!driver) {
-      console.log("❌ Driver not found.");
-      return;
-    }
 
     const journey = await Journey.findOne({ Driver: driver._id })
       .populate({
