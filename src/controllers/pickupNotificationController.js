@@ -141,28 +141,43 @@ export const sendPickupConfirmation = async (req, res) => {
 
 //send before 10 minites send template controller
 
+
 export const schedulePickupNotification = async (passenger, bufferStart) => {
+  console.log("📦 Scheduling pickup notification...");
   const templateName = 'pick_up_passenger_notification_before_10_minutes__';
   const broadcastName = `pick_up_passenger_notification_before_10_minutes___${formatBroadcastName(bufferStart)}`;
+  
   const phoneNumber = passenger.Employee_PhoneNumber;
   const name = passenger.Employee_Name;
+
+  console.log(`👤 Passenger: ${name}, Phone: ${phoneNumber}`);
+  console.log(`🕒 Original Pickup Time (bufferStart): ${new Date(bufferStart).toISOString()}`);
 
   const pickupDate = new Date(bufferStart);
   const sendTime = new Date(pickupDate.getTime() - 10 * 60 * 1000); // 10 minutes before
   const delay = sendTime.getTime() - Date.now();
 
+  console.log(`🕑 Notification scheduled for: ${sendTime.toISOString()}`);
+  console.log(`⏳ Delay until send (ms): ${delay}`);
+
   if (delay <= 0) {
-    // Time already passed — send immediately
-    await sendPickupTemplateBefore10Min(phoneNumber, name, templateName, broadcastName);
+    console.log("⚠️ Pickup is too close or in the past. Sending notification immediately.");
+    try {
+      await sendPickupTemplateBefore10Min(phoneNumber, name, templateName, broadcastName);
+      console.log(`✅ Immediate notification sent to ${name} (${phoneNumber})`);
+    } catch (err) {
+      console.error(`❌ Failed to send immediate notification to ${name}:`, err);
+    }
     return;
   }
 
   setTimeout(async () => {
     try {
+      console.log(`🚀 Sending scheduled notification to ${name} at ${new Date().toISOString()}`);
       await sendPickupTemplateBefore10Min(phoneNumber, name, templateName, broadcastName);
-      console.log(`Scheduled notification sent to ${name} (${phoneNumber}) at ${new Date().toISOString()}`);
+      console.log(`✅ Scheduled notification sent to ${name} (${phoneNumber})`);
     } catch (err) {
-      console.error(`Failed to send scheduled pickup message to ${name}:`, err);
+      console.error(`❌ Failed to send scheduled pickup message to ${name}:`, err);
     }
   }, delay);
 };
@@ -176,5 +191,3 @@ function formatBroadcastName(pickupTime) {
   const min = String(dt.getMinutes()).padStart(2, '0');
   return `${day}${month}${year}${hour}${min}`;
 }
-
-
