@@ -143,14 +143,14 @@ export const sendPickupConfirmation = async (req, res) => {
 
 
 export const notifyPassengerBeforePickup = async (req, res) => {
-  const { phoneNumber, name, pickupTime } = req.body;
+  const { whatsappNumber, name, pickupTime } = req.body;
 
   try {
     const broadcastName = `pick_up_passenger_notification_before_10_minutes___${formatBroadcastName(pickupTime)}`;
     const templateName = 'pick_up_passenger_notification_before_10_minutes__';
 
     const result = await sendPickupTemplateBefore10Min(
-      phoneNumber,
+      whatsappNumber,
       name,
       templateName,
       broadcastName

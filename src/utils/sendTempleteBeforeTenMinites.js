@@ -1,6 +1,6 @@
 
 
-export const sendPickupTemplateBefore10Min = async (phoneNumber, name, templateName, broadcastName) => {
+export const sendPickupTemplateBefore10Min = async (whatsappNumber, name, templateName, broadcastName) => {
   const url = 'https://live-mt-server.wati.io/388428/api/v1/sendTemplateMessages';
 
   const payload = {
@@ -12,7 +12,7 @@ export const sendPickupTemplateBefore10Min = async (phoneNumber, name, templateN
             value: name
           }
         ],
-        phoneNumber: phoneNumber
+        whatsappNumber: whatsappNumber
       }
     ],
     template_name: templateName,
