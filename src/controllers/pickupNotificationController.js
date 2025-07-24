@@ -141,62 +141,32 @@ export const sendPickupConfirmation = async (req, res) => {
 
 //send before 10 minites send template controller
 
+export const schedulePickupNotification = async (passenger, bufferStart) => {
+  const templateName = 'pick_up_passenger_notification_before_10_minutes__';
+  const broadcastName = `pick_up_passenger_notification_before_10_minutes___${formatBroadcastName(bufferStart)}`;
+  const phoneNumber = passenger.Employee_PhoneNumber;
+  const name = passenger.Employee_Name;
 
+  const pickupDate = new Date(bufferStart);
+  const sendTime = new Date(pickupDate.getTime() - 10 * 60 * 1000); // 10 minutes before
+  const delay = sendTime.getTime() - Date.now();
 
-
-export const notifyPassengerBeforePickup = async (req, res) => {
-  const { phoneNumber, name, pickupTime } = req.body;
-
-  try {
-    const templateName = 'pick_up_passenger_notification_before_10_minutes__';
-    const broadcastName = `pick_up_passenger_notification_before_10_minutes___${formatBroadcastName(pickupTime)}`;
-
-    const pickupDate = new Date(pickupTime);
-    const sendTime = new Date(pickupDate.getTime() - 10 * 60 * 1000); // 10 minutes before
-    const delay = sendTime.getTime() - Date.now();
-
-    if (delay <= 0) {
-      // Pickup is too close or past — send immediately
-      const result = await sendPickupTemplateBefore10Min(
-        phoneNumber,
-        name,
-        templateName,
-        broadcastName
-      );
-      return res.status(200).json({
-        success: true,
-        message: 'Pickup time is too close. Notification sent immediately.',
-        result,
-      });
-    }
-
-    // Schedule the message
-    setTimeout(async () => {
-      try {
-        await sendPickupTemplateBefore10Min(
-          phoneNumber,
-          name,
-          templateName,
-          broadcastName
-        );
-        console.log(`Notification sent to ${name} at ${new Date().toISOString()}`);
-      } catch (err) {
-        console.error('Failed to send scheduled message:', err);
-      }
-    }, delay);
-
-    res.status(200).json({
-      success: true,
-      message: `Notification scheduled for ${sendTime.toISOString()}`,
-      scheduledFor: sendTime,
-    });
-  } catch (error) {
-    console.error("Notify error:", error);
-    res.status(500).json({ success: false, message: 'Failed to schedule notification', error });
+  if (delay <= 0) {
+    // Time already passed — send immediately
+    await sendPickupTemplateBefore10Min(phoneNumber, name, templateName, broadcastName);
+    return;
   }
+
+  setTimeout(async () => {
+    try {
+      await sendPickupTemplateBefore10Min(phoneNumber, name, templateName, broadcastName);
+      console.log(`Scheduled notification sent to ${name} (${phoneNumber}) at ${new Date().toISOString()}`);
+    } catch (err) {
+      console.error(`Failed to send scheduled pickup message to ${name}:`, err);
+    }
+  }, delay);
 };
 
-// Helper to format broadcast name
 function formatBroadcastName(pickupTime) {
   const dt = new Date(pickupTime);
   const day = String(dt.getDate()).padStart(2, '0');
@@ -206,4 +176,5 @@ function formatBroadcastName(pickupTime) {
   const min = String(dt.getMinutes()).padStart(2, '0');
   return `${day}${month}${year}${hour}${min}`;
 }
+
 
