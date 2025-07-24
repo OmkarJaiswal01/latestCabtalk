@@ -1,5 +1,5 @@
 import express from "express";
-import { notifyPassengerBeforePickup, sendPickupConfirmation,notifyPassengerBeforePickup } from "../controllers/pickupNotificationController.js";
+import { notifyPassengerBeforePickup, sendPickupConfirmation } from "../controllers/pickupNotificationController.js";
 import { sendDropConfirmation } from "../controllers/dropConfirmationPassenger.js";
 import { startRideUpdatePassengerController } from "../utils/rideStartUpdatePassenger.js";
 const router = express.Router();
