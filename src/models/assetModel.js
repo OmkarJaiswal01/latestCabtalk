@@ -11,6 +11,21 @@ const passengerSubSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    bufferStart: {
+      type: Date,
+      required: true,
+      index: true,
+    },
+    bufferEnd: {
+      type: Date,
+      required: true,
+      index: true,
+    },
+    wfoDays: {
+      type: [String],
+      enum: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+      default: [],
+    },
   },
   { _id: false }
 );
@@ -65,3 +80,4 @@ assetSchema.pre("save", async function (next) {
   next();
 });
 export default mongoose.model("Asset", assetSchema);
+ 

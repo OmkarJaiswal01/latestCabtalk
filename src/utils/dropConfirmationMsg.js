@@ -1,6 +1,11 @@
+
+
 export const sendDropConfirmationMessage = async (phoneNumber, name) => {
   try {
     const cleanedPhone = phoneNumber.replace(/\D/g, "");
+const [firstNameRaw] = name.trim().split(/\s+/);
+    const firstName = firstNameRaw || name;
+
     const url = `https://live-mt-server.wati.io/388428/api/v1/sendTemplateMessage?whatsappNumber=${cleanedPhone}`;
 
     const options = {
@@ -16,7 +21,7 @@ export const sendDropConfirmationMessage = async (phoneNumber, name) => {
         parameters: [
           {
             name: "name",
-            value: name,
+            value: firstName,
           },
         ],
       }),

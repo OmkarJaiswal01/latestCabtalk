@@ -2,6 +2,7 @@ import Asset from "../models/assetModel.js";
 import Journey from "../models/JourneyModel.js";
 import { sendPickupConfirmationMessage } from "../utils/PickUpPassengerSendTem.js";
 import { sendOtherPassengerSameShiftUpdateMessage } from "../utils/InformOtherPassenger.js";
+import {sendPickupTemplateBefore10Min} from "../utils/sendTempleteBeforeTenMinites.js"
 
 export const sendPickupConfirmation = async (req, res) => {
   try {
@@ -136,3 +137,38 @@ export const sendPickupConfirmation = async (req, res) => {
       .json({ success: false, message: "Server error", error: err.message });
   }
 };
+
+
+//send before 10 minites send template controller
+
+
+export const notifyPassengerBeforePickup = async (req, res) => {
+  const { whatsappNumber, name, pickupTime } = req.body;
+
+  try {
+    const broadcastName = `pick_up_passenger_notification_before_10_minutes___${formatBroadcastName(pickupTime)}`;
+    const templateName = 'pick_up_passenger_notification_before_10_minutes__';
+
+    const result = await sendPickupTemplateBefore10Min(
+      whatsappNumber,
+      name,
+      templateName,
+      broadcastName
+    );
+
+    res.status(200).json({ success: true, message: 'Notification sent', result });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to send notification', error });
+  }
+};
+
+// Helper to create broadcast name from pickup time
+function formatBroadcastName(pickupTime) {
+  const dt = new Date(pickupTime); // Ensure pickupTime is ISO or parsable
+  const day = String(dt.getDate()).padStart(2, '0');
+  const month = String(dt.getMonth() + 1).padStart(2, '0');
+  const year = dt.getFullYear();
+  const hour = String(dt.getHours()).padStart(2, '0');
+  const min = String(dt.getMinutes()).padStart(2, '0');
+  return `${day}${month}${year}${hour}${min}`;
+}

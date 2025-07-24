@@ -1,6 +1,7 @@
 export const sendOtherPassengerSameShiftUpdateMessage = async (
   passengerPhone, otherPassengerName, pickedPassengerName ) => {
   const cleanPhone = passengerPhone.replace(/\D/g, "");
+  
   const url = `https://live-mt-server.wati.io/388428/api/v1/sendTemplateMessage?whatsappNumber=${cleanPhone}`;
 
   const options = {

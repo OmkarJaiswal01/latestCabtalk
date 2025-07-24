@@ -3,8 +3,8 @@ import Asset from "../models/assetModel.js";
 import Driver from "../models/driverModel.js";
 import Passenger from "../models/Passenger.js";
 import { asyncHandler } from "../middlewares/asyncHandler.js";
-import axios from "axios";  
-
+import axios from "axios";
+ 
 const updateDriverWatiStatus = async (phoneNumber, activeDriver = true) => {
   const url = `https://live-mt-server.wati.io/388428/api/v1/updateContactAttributes/${phoneNumber}`;
   const payload = {
@@ -28,7 +28,7 @@ const updateDriverWatiStatus = async (phoneNumber, activeDriver = true) => {
 };
 export const getAvailableAssets = async (req, res) => {
   try {
-    const assets = await Asset.find({ 
+    const assets = await Asset.find({
       isActive: false,
       $expr: {
         $eq: [
@@ -82,10 +82,10 @@ export const addAsset = asyncHandler(async (req, res) => {
     asset.capacity = capacity;
     if (isActive !== undefined) asset.isActive = isActive;
     await asset.save();
-
+ 
     req.app.get("io").emit("assetUpdated", asset);
     await updateDriverWatiStatus(driver.phoneNumber, true);
-
+ 
     return res.status(200).json({
       success: true,
       message: "Asset exists—capacity updated.",
@@ -98,10 +98,10 @@ export const addAsset = asyncHandler(async (req, res) => {
     passengers: [],
     isActive: !!isActive,
   });
-
+ 
   req.app.get("io").emit("newAsset", asset);
   await updateDriverWatiStatus(driver.phoneNumber, true);
-
+ 
   return res.status(201).json({
     success: true,
     message: "Asset added successfully.",
@@ -121,7 +121,7 @@ export const getAllAssets = asyncHandler(async (req, res) => {
 export const updateAsset = asyncHandler(async (req, res) => {
   const { capacity, isActive } = req.body;
   const { id: assetId } = req.params;
-
+ 
   if (!mongoose.Types.ObjectId.isValid(assetId)) {
     return res.status(400).json({ success: false, message: "Invalid asset ID." });
   }
@@ -194,7 +194,7 @@ export const deleteAsset = asyncHandler(async (req, res) => {
     }
     const io = req.app.get("io");
     io.emit("assetDeleted", assetId);
-
+ 
     return res.status(200).json({
       success: true,
       message: "Asset deleted successfully.",
@@ -211,56 +211,73 @@ export const deleteAsset = asyncHandler(async (req, res) => {
 });
 export const addMultiplePassengersToAsset = asyncHandler(async (req, res) => {
   try {
-    const { passengerIds, shift } = req.body;
+    const { passengers, shift } = req.body;
     const { id: assetId } = req.params;
     if (
       !mongoose.Types.ObjectId.isValid(assetId) ||
-      !Array.isArray(passengerIds) ||
-      passengerIds.length === 0 ||
-      passengerIds.some((id) => !mongoose.Types.ObjectId.isValid(id)) ||
+      !Array.isArray(passengers) ||
+      passengers.length === 0 ||
       typeof shift !== "string" ||
       !shift.trim()
     ) {
       return res.status(400).json({
         success: false,
         message:
-          "Valid assetId, non‑empty passengerIds array, and shift are required.",
+          "assetId, non-empty passengers array, and shift are required.",
       });
     }
-
-    const [asset, passengers] = await Promise.all([
-      Asset.findById(assetId),
-      Passenger.find({ _id: { $in: passengerIds } }),
-    ]);
-    if (!asset) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Asset not found." });
+    for (const p of passengers) {
+      if (
+        !p.id ||
+        !mongoose.Types.ObjectId.isValid(p.id) ||
+        !p.bufferStart ||
+        !p.bufferEnd ||
+        isNaN(new Date(p.bufferStart).getTime()) ||
+        isNaN(new Date(p.bufferEnd).getTime()) ||
+        !Array.isArray(p.wfoDays) ||
+        p.wfoDays.some(d => !["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].includes(d))
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Each passenger must include a valid id, bufferStart, bufferEnd, and wfoDays (array of Mon–Sun).",
+        });
+      }
     }
-
-    const already = passengers.filter((p) => p.asset);
+    const [asset, passengerDocs] = await Promise.all([
+      Asset.findById(assetId),
+      Passenger.find({ _id: { $in: passengers.map(p => p.id) } })
+    ]);
+ 
+    if (!asset) {
+      return res.status(404).json({ success: false, message: "Asset not found." });
+    }
+    const already = passengerDocs.filter(p => p.asset);
     if (already.length) {
       return res.status(400).json({
         success: false,
         message: `Already assigned to an Asset`,
       });
     }
-
-    const existingShift = asset.passengers.find((grp) => grp.shift === shift);
+ 
+    const existingShift = asset.passengers.find(g => g.shift === shift);
     const shiftCount = existingShift ? existingShift.passengers.length : 0;
-    if (shiftCount + passengerIds.length > asset.capacity) {
+    if (shiftCount + passengers.length > asset.capacity) {
       return res.status(400).json({
         success: false,
-        message: `Shift capacity exceeded`,
+        message: `Shift capacity exceeded.`,
       });
     }
-
-    const newSubs = passengerIds.map((pid) => ({
-      passenger: pid,
-      requiresTransport: true,
+ 
+    const newSubs = passengers.map(p => ({
+      passenger:         p.id,
+      requiresTransport: p.requiresTransport ?? true,
+      bufferStart:       new Date(p.bufferStart),
+      bufferEnd:         new Date(p.bufferEnd),
+      wfoDays:           p.wfoDays,
     }));
-
-    const idx = asset.passengers.findIndex((grp) => grp.shift === shift);
+ 
+    const idx = asset.passengers.findIndex(g => g.shift === shift);
     if (idx >= 0) {
       asset.passengers[idx].passengers.push(...newSubs);
     } else {
@@ -271,7 +288,7 @@ export const addMultiplePassengersToAsset = asyncHandler(async (req, res) => {
       session.startTransaction();
       await asset.save({ session });
       await Passenger.updateMany(
-        { _id: { $in: passengerIds } },
+        { _id: { $in: passengers.map(p => p.id) } },
         { $set: { asset: asset._id } },
         { session }
       );
@@ -288,7 +305,7 @@ export const addMultiplePassengersToAsset = asyncHandler(async (req, res) => {
         "passengers.passengers.passenger",
         "Employee_ID Employee_Name Employee_PhoneNumber"
       );
-
+ 
     req.app.get("io").emit("assetUpdated", updated);
     return res.status(200).json({
       success: true,
@@ -306,7 +323,7 @@ export const addMultiplePassengersToAsset = asyncHandler(async (req, res) => {
 export const removePassengerFromAsset = asyncHandler(async (req, res) => {
   const { passengerId } = req.body;
   const { id: assetId } = req.params;
-
+ 
   if (!mongoose.Types.ObjectId.isValid(assetId)) {
     return res.status(400).json({
       success: false,
@@ -343,14 +360,14 @@ export const removePassengerFromAsset = asyncHandler(async (req, res) => {
       (p) => !p.passenger.equals(passengerId)
     );
   }
-
+ 
   asset.passengers = asset.passengers.filter(
     (shiftGroup) => shiftGroup.passengers.length > 0
   );
   const session = await mongoose.startSession();
   try {
     session.startTransaction();
-
+ 
     await asset.save({ session });
     if (passenger.asset && passenger.asset.equals(assetId)) {
       passenger.asset = null;
@@ -369,7 +386,7 @@ export const removePassengerFromAsset = asyncHandler(async (req, res) => {
   }
   const io = req.app.get("io");
   io.emit("assetUpdated", asset);
-
+ 
   return res.status(200).json({
     success: true,
     message: "Passenger removed from asset successfully.",
