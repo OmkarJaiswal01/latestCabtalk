@@ -8,7 +8,7 @@ import { sendPickupConfirmationMessage } from "../utils/PickUpPassengerSendTem.j
 import { sendOtherPassengerSameShiftUpdateMessage } from "../utils/InformOtherPassenger.js";
 import { sendDropConfirmationMessage } from "../utils/dropConfirmationMsg.js";
 import { startRideUpdatePassengerController } from "../utils/rideStartUpdatePassenger.js"; 
-
+import {schedulePickupNotification} from "../controllers/pickupNotificationController.js"
 
 
 
