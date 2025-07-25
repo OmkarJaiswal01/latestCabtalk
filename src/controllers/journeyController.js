@@ -11,6 +11,7 @@ import { startRideUpdatePassengerController } from "../utils/rideStartUpdatePass
 
 
 
+
 export const createJourney = async (req, res) => {
   console.log("➡️ [START] createJourney triggered");
   console.log("📦 Request Body:", req.body);
@@ -18,7 +19,6 @@ export const createJourney = async (req, res) => {
   try {
     const { Journey_Type, vehicleNumber, Journey_shift } = req.body;
 
-    // Step 1: Validate required fields
     console.log("🧪 Validating required fields...");
     if (!Journey_Type || !vehicleNumber || !Journey_shift) {
       console.warn("⚠️ Validation failed: Missing fields");
@@ -28,7 +28,6 @@ export const createJourney = async (req, res) => {
     }
     console.log("✅ Fields validated");
 
-    // Step 2: Find driver by vehicle number
     console.log(`🔍 Searching for driver with vehicleNumber: ${vehicleNumber}`);
     const driver = await Driver.findOne({ vehicleNumber });
 
@@ -40,12 +39,11 @@ export const createJourney = async (req, res) => {
     }
     console.log("✅ Driver found:", driver._id);
 
-    // Step 3: Find asset assigned to driver
     console.log(`🔍 Searching for asset assigned to driver ID: ${driver._id}`);
     const asset = await Asset.findOne({ driver: driver._id }).populate({
       path: "passengers.passengers.passenger",
       model: "Passenger",
-      select: "Employee_ID Employee_Name Employee_PhoneNumber",
+      select: "Employee_ID Employee_Name Employee_PhoneNumber shift",
     });
 
     if (!asset) {
@@ -56,7 +54,6 @@ export const createJourney = async (req, res) => {
     }
     console.log("✅ Asset found:", asset._id);
 
-    // Step 4: Check for existing journey
     console.log("🔎 Checking for existing active journey for this driver...");
     const existingJourney = await Journey.findOne({ Driver: driver._id });
 
@@ -73,7 +70,6 @@ export const createJourney = async (req, res) => {
     }
     console.log("✅ No active journey found");
 
-    // Step 5: Create new journey
     console.log("🛠 Creating a new journey...");
     const newJourney = new Journey({
       Driver: driver._id,
@@ -87,15 +83,13 @@ export const createJourney = async (req, res) => {
     await newJourney.save();
     console.log("✅ New journey saved:", newJourney._id);
 
-    // Step 6: Update asset as active
     console.log("🔧 Updating asset status to active...");
     asset.isActive = true;
     await asset.save();
     console.log("✅ Asset updated:", asset._id);
 
-    // Step 7: Notify passengers if journey is pickup
     if (Journey_Type === "Pickup") {
-      console.log("📣 Journey type is Pickup – notifying passengers...");
+      console.log("📣 Journey type is Pickup – notifying assigned passengers...");
       try {
         const mockReq = {
           body: { vehicleNumber, Journey_shift },
@@ -107,15 +101,17 @@ export const createJourney = async (req, res) => {
           }),
         };
         await startRideUpdatePassengerController(mockReq, mockRes);
-        console.log("✅ Passengers notified");
+        console.log("✅ Assigned passengers notified");
+
+        console.log("📨 Notifying other passengers in same shift...");
+        await sendOtherPassengerSameShiftUpdateMessage(Journey_shift, asset._id);
       } catch (err) {
-        console.error("🚨 Error notifying passengers:", err.message);
+        console.error("🚨 Error during passenger notifications:", err.message);
       }
     } else {
       console.log("ℹ️ Journey type is not Pickup – skipping passenger notification");
     }
 
-    // Step 8: Emit socket event
     const io = req.app.get("io");
     if (io) {
       console.log("📡 Emitting socket event: newJourney");
@@ -138,6 +134,7 @@ export const createJourney = async (req, res) => {
     });
   }
 };
+
 
 
 
