@@ -12,27 +12,36 @@ import { startRideUpdatePassengerController } from "../utils/rideStartUpdatePass
 
 
 export const createJourney = async (req, res) => {
-  console.log("➡️ createJourney triggered with body:", req.body);
+  console.log("➡️ [START] createJourney triggered");
+  console.log("📦 Request Body:", req.body);
+
   try {
     const { Journey_Type, vehicleNumber, Journey_shift } = req.body;
 
+    // Step 1: Validate required fields
+    console.log("🧪 Validating required fields...");
     if (!Journey_Type || !vehicleNumber || !Journey_shift) {
-      console.warn("⚠️ Missing required fields");
+      console.warn("⚠️ Validation failed: Missing fields");
       return res.status(400).json({
         message: "Journey_Type, vehicleNumber and Journey_shift are required.",
       });
     }
+    console.log("✅ Fields validated");
 
-    console.log(`🔍 Looking for driver with vehicleNumber: ${vehicleNumber}`);
+    // Step 2: Find driver by vehicle number
+    console.log(`🔍 Searching for driver with vehicleNumber: ${vehicleNumber}`);
     const driver = await Driver.findOne({ vehicleNumber });
+
     if (!driver) {
       console.warn("❌ Driver not found");
-      return res
-        .status(404)
-        .json({ message: "No driver found with this vehicle number." });
+      return res.status(404).json({
+        message: "No driver found with this vehicle number.",
+      });
     }
+    console.log("✅ Driver found:", driver._id);
 
-    console.log(`🔍 Looking for asset assigned to driver ID: ${driver._id}`);
+    // Step 3: Find asset assigned to driver
+    console.log(`🔍 Searching for asset assigned to driver ID: ${driver._id}`);
     const asset = await Asset.findOne({ driver: driver._id }).populate({
       path: "passengers.passengers.passenger",
       model: "Passenger",
@@ -41,13 +50,16 @@ export const createJourney = async (req, res) => {
 
     if (!asset) {
       console.warn("❌ No asset found for this driver");
-      return res
-        .status(404)
-        .json({ message: "No assigned vehicle found for this driver." });
+      return res.status(404).json({
+        message: "No assigned vehicle found for this driver.",
+      });
     }
+    console.log("✅ Asset found:", asset._id);
 
-    console.log("🔎 Checking for existing active journey");
+    // Step 4: Check for existing journey
+    console.log("🔎 Checking for existing active journey for this driver...");
     const existingJourney = await Journey.findOne({ Driver: driver._id });
+
     if (existingJourney) {
       console.warn("⛔ Active journey already exists");
       await sendWhatsAppMessage(
@@ -59,8 +71,10 @@ export const createJourney = async (req, res) => {
           "Active journey exists. Please end the current ride before starting a new one.",
       });
     }
+    console.log("✅ No active journey found");
 
-    console.log("🛠 Creating new journey");
+    // Step 5: Create new journey
+    console.log("🛠 Creating a new journey...");
     const newJourney = new Journey({
       Driver: driver._id,
       Asset: asset._id,
@@ -73,53 +87,58 @@ export const createJourney = async (req, res) => {
     await newJourney.save();
     console.log("✅ New journey saved:", newJourney._id);
 
+    // Step 6: Update asset as active
+    console.log("🔧 Updating asset status to active...");
     asset.isActive = true;
     await asset.save();
-    console.log("✅ Asset marked active:", asset._id);
+    console.log("✅ Asset updated:", asset._id);
 
-    // 🔔 Notify passengers only if Journey_Type is "pickup" 
-
+    // Step 7: Notify passengers if journey is pickup
     if (Journey_Type === "Pickup") {
+      console.log("📣 Journey type is Pickup – notifying passengers...");
       try {
-        console.log("📣 Notifying passengers via startRideUpdatePassengerController");
         const mockReq = {
           body: { vehicleNumber, Journey_shift },
         };
         const mockRes = {
           status: (code) => ({
             json: (data) =>
-              console.log(
-                `🟢 startRideUpdatePassengerController response [${code}]:`,
-                data
-              ),
+              console.log(`🟢 Passenger notification response [${code}]:`, data),
           }),
         };
         await startRideUpdatePassengerController(mockReq, mockRes);
+        console.log("✅ Passengers notified");
       } catch (err) {
-        console.error("🚨 Failed to notify passengers:", err.message);
+        console.error("🚨 Error notifying passengers:", err.message);
       }
+    } else {
+      console.log("ℹ️ Journey type is not Pickup – skipping passenger notification");
     }
 
+    // Step 8: Emit socket event
     const io = req.app.get("io");
     if (io) {
       console.log("📡 Emitting socket event: newJourney");
       io.emit("newJourney", newJourney);
+    } else {
+      console.warn("⚠️ Socket IO instance not found");
     }
 
-    console.log("✅ Journey creation complete");
+    console.log("✅ [SUCCESS] Journey creation complete");
     return res.status(201).json({
       message: "Journey created successfully.",
       newJourney,
       updatedAsset: asset,
     });
   } catch (error) {
-    console.error("❌ Server error in createJourney:", error.message);
+    console.error("❌ [ERROR] Server error in createJourney:", error.message);
     return res.status(500).json({
       message: "Server error",
       error: error.message,
     });
   }
 };
+
 
 
 
@@ -158,6 +177,8 @@ export const getJourneys = async (req, res) => {
       .json({ message: "Server error", error: error.message });
   }
 };
+
+
 export const handleWatiWebhook = asyncHandler(async (req, res) => {
   res.sendStatus(200);
   try {
