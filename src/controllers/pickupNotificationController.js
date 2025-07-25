@@ -141,14 +141,19 @@ export const sendPickupConfirmation = async (req, res) => {
 
 //send before 10 minites send template controller
 
-
 export const schedulePickupNotification = async (passenger, bufferStart) => {
   console.log("📦 Scheduling pickup notification...");
+
+  const phoneNumber = passenger?.Employee_PhoneNumber;
+  const name = passenger?.Employee_Name;
+
+  if (!phoneNumber || !name || !bufferStart || isNaN(new Date(bufferStart).getTime())) {
+    console.warn(`❌ Invalid passenger data. name=${name}, phone=${phoneNumber}, bufferStart=${bufferStart}`);
+    return;
+  }
+
   const templateName = 'pick_up_passenger_notification_before_10_minutes__';
   const broadcastName = `pick_up_passenger_notification_before_10_minutes___${formatBroadcastName(bufferStart)}`;
-  
-  const phoneNumber = passenger.Employee_PhoneNumber;
-  const name = passenger.Employee_Name;
 
   console.log(`👤 Passenger: ${name}, Phone: ${phoneNumber}`);
   console.log(`🕒 Original Pickup Time (bufferStart): ${new Date(bufferStart).toISOString()}`);
