@@ -281,7 +281,7 @@ export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
   const phoneNumber = passenger?.Employee_PhoneNumber;
   const name = passenger?.Employee_Name;
 
-  // Step 1: Validate input
+  // ✅ Step 1: Validate inputs
   if (!phoneNumber || !name || !bufferEnd || isNaN(new Date(bufferEnd).getTime())) {
     console.warn(`❌ Invalid input. name=${name}, phone=${phoneNumber}, bufferEnd=${bufferEnd}`);
     return;
@@ -291,55 +291,56 @@ export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
   const sendTime = new Date(bufferEnd);
   const delay = sendTime.getTime() - now.getTime();
 
-  console.log(`📅 bufferEnd for ${name} is at ${sendTime.toISOString()}`);
-  console.log(`⏳ Will trigger in ${delay / 1000}s`);
+  const { hours, minutes, seconds } = convertMillisecondsToTimeBufferEnd(delay);
+  console.log(`📅 bufferEnd for ${name}: ${sendTime.toISOString()}`);
+  console.log(`⏳ Notification in: ${hours}h ${minutes}m ${seconds}s (${delay}ms)`);
 
-  // Function to check if still not boarded
+  // 🔄 Step 2: Function to run at bufferEnd
   const sendIfStillNotBoarded = async () => {
     try {
       console.log(`🔍 Checking if ${name} (${phoneNumber}) has boarded...`);
 
-      // Find the active pickup journey containing this passenger
+      // ✅ Step 2.1: Find latest pickup journey that includes this passenger
       const journey = await Journey.findOne({
         Journey_Type: { $regex: /^pickup$/, $options: "i" },
         "Asset.passengers.passengers.passenger": passenger._id,
       })
-        .sort({ createdAt: -1 })
+        .sort({ createdAt: -1 }) // latest journey first
         .populate("boardedPassengers.passenger", "Employee_PhoneNumber");
 
       if (!journey) {
-        console.warn(`❌ No journey found for ${name}`);
+        console.warn(`❌ No pickup journey found for passenger: ${name}`);
         return;
       }
 
-      const isBoarded = journey.boardedPassengers.some(bp =>
-        bp.passenger._id.equals(passenger._id)
+      // ✅ Step 2.2: Check if passenger already boarded
+      const isBoarded = journey.boardedPassengers?.some(bp =>
+        bp.passenger?._id?.equals(passenger._id)
       );
 
       if (!isBoarded) {
-        console.log(`📨 Sending WhatsApp template to ${name} at bufferEnd...`);
+        console.log(`📨 Passenger ${name} NOT boarded. Sending reminder...`);
         await sendTemplateMoveCab(phoneNumber, name);
-        console.log(`✅ Template sent.`);
+        console.log(`✅ Reminder sent to ${name} (${phoneNumber})`);
       } else {
-        console.log(`🛑 ${name} already boarded. No message sent.`);
+        console.log(`🛑 Passenger ${name} already boarded. No reminder needed.`);
       }
     } catch (err) {
-      console.error(`❌ Error during bufferEnd check for ${name}:`, err.message);
+      console.error(`❌ Error while checking boarding status for ${name}:`, err.message);
     }
   };
 
-  // Step 2: Schedule or trigger now
+  // ⏲️ Step 3: Schedule or send immediately
   if (delay <= 0) {
-    console.log("⚠️ bufferEnd already passed. Sending immediately if not boarded.");
+    console.log("⚠️ bufferEnd already passed. Sending check immediately.");
     await sendIfStillNotBoarded();
   } else {
+    console.log(`⏳ Scheduling check in ${delay / 1000}s`);
     setTimeout(sendIfStillNotBoarded, delay);
   }
 };
 
-
-
-// 🔧 Format delay to readable time
+// 🔧 Utility: Format milliseconds into time breakdown
 function convertMillisecondsToTimeBufferEnd(ms) {
   const totalSeconds = Math.floor(ms / 1000);
   const hours = Math.floor(totalSeconds / 3600);
