@@ -473,18 +473,29 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
       );
       const bufferEnd = shiftData?.bufferEnd;
 
+      // if (bufferEnd) {
+      //   console.log(`⏳ [Step 14] Scheduling bufferEnd notification for ${passenger.Employee_Name} at ${bufferEnd}`);
+      //   await scheduleBufferEndNotification(passenger, bufferEnd, (p) => {
+      //     const cleaned = (p.Employee_PhoneNumber || "").replace(/\D/g, "");
+      //     return journey.boardedPassengers.some(bp => {
+      //       const bpClean = (bp.passenger.Employee_PhoneNumber || "").replace(/\D/g, "");
+      //       return bpClean === cleaned;
+      //     });
+      //   });
+      // } else {
+      //   console.log(`⚠️ [Step 14] No bufferEnd found for ${passenger.Employee_Name}. Notification not scheduled.`);
+      // }
+
       if (bufferEnd) {
         console.log(`⏳ [Step 14] Scheduling bufferEnd notification for ${passenger.Employee_Name} at ${bufferEnd}`);
-        await scheduleBufferEndNotification(passenger, bufferEnd, (p) => {
-          const cleaned = (p.Employee_PhoneNumber || "").replace(/\D/g, "");
-          return journey.boardedPassengers.some(bp => {
-            const bpClean = (bp.passenger.Employee_PhoneNumber || "").replace(/\D/g, "");
-            return bpClean === cleaned;
-          });
-        });
+        await scheduleBufferEndNotification(passenger, bufferEnd);
       } else {
         console.log(`⚠️ [Step 14] No bufferEnd found for ${passenger.Employee_Name}. Notification not scheduled.`);
       }
+
+
+
+
     }
 
     // Step 15: Drop-specific logic

@@ -214,7 +214,7 @@ function convertMillisecondsToTime(ms) {
 // send template on buffer End time
 
 // Send template only if passenger hasn't onboarded before bufferEnd
-export const scheduleBufferEndNotification = async (passenger, bufferEnd, isPassengerOnboarded) => {
+export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
   console.log("📦 [Step 0] Starting bufferEnd notification scheduling...");
 
   const phoneNumber = passenger?.Employee_PhoneNumber;
@@ -227,61 +227,51 @@ export const scheduleBufferEndNotification = async (passenger, bufferEnd, isPass
     return;
   }
 
-  // Step 2: Initialize send flag
-  console.log("🔁 [Step 2] Initializing shouldSendTemplate flag...");
-  let shouldSendTemplate = true;
-
-  // Step 3: Pre-check if passenger is already onboarded
-  console.log("👀 [Step 3] Checking if passenger is already onboarded...");
-  if (isPassengerOnboarded(passenger)) {
-    shouldSendTemplate = false;
-    console.log(`🛑 [Step 3] Passenger ${name} is already onboarded. Skipping template scheduling.`);
-    return;
-  }
-
-  // Step 4: Calculate delay until bufferEnd
   const now = new Date();
   const sendTime = new Date(bufferEnd);
   const delay = sendTime.getTime() - now.getTime();
 
   const { hours, minutes, seconds } = convertMillisecondsToTimeBufferEnd(delay);
+  console.log(`📋 Passenger: ${name}, Phone: ${phoneNumber}`);
+  console.log(`📅 bufferEnd Time: ${sendTime.toISOString()}`);
+  console.log(`🕒 Current Time: ${now.toISOString()}`);
+  console.log(`⏳ Time until bufferEnd: ${delay} ms (${hours}h ${minutes}m ${seconds}s)`);
 
-  console.log(`📋 [Step 4] Passenger: ${name}, Phone: ${phoneNumber}`);
-  console.log(`📅 [Step 4] bufferEnd Time: ${sendTime.toISOString()}`);
-  console.log(`🕒 [Step 4] Current Time: ${now.toISOString()}`);
-  console.log(`⏳ [Step 4] Time until bufferEnd: ${delay} ms (${hours}h ${minutes}m ${seconds}s)`);
+  const sendTemplateIfStillNotBoarded = async () => {
+    try {
+      // Step 2: Find the journey where this passenger is in the asset.passengers
+      const journey = await Journey.findOne({
+        "Asset.passengers.passengers.passenger": passenger._id,
+      }).populate("boardedPassengers.passenger", "Employee_PhoneNumber");
 
-  // Step 5: Handle immediate sending if bufferEnd is in the past
-  if (delay <= 0) {
-    console.log("⚡ [Step 5] bufferEnd is now or already passed. Sending immediately if allowed...");
-    if (shouldSendTemplate) {
-      try {
-        console.log(`📨 [Step 5] Sending WhatsApp template to ${name} immediately...`);
+      if (!journey) {
+        console.warn(`❌ No active journey found for ${name} (${phoneNumber})`);
+        return;
+      }
+
+      // Step 3: Check if already boarded
+      const stillNotBoarded = !journey.boardedPassengers.some(bp =>
+        bp.passenger._id.equals(passenger._id)
+      );
+
+      if (stillNotBoarded) {
+        console.log(`📨 Sending WhatsApp template to ${name} at bufferEnd...`);
         await sendTemplateMoveCab(phoneNumber, name);
-        console.log(`✅ [Step 5] WhatsApp template sent to ${name} (${phoneNumber})`);
-      } catch (err) {
-        console.error(`❌ [Step 5] Failed to send template to ${name}:`, err.message);
-      }
-    } else {
-      console.log(`🛑 [Step 5] Skipped sending template to ${name} — onboarded already.`);
-    }
-  } else {
-    // Step 6: Schedule sending with timeout
-    console.log("⏲️ [Step 6] Scheduling WhatsApp template to send at bufferEnd...");
-    setTimeout(async () => {
-      console.log(`⏰ [Step 6] bufferEnd reached for ${name}. Re-checking onboard status...`);
-      if (!isPassengerOnboarded(passenger)) {
-        try {
-          console.log(`📨 [Step 6] Sending scheduled WhatsApp template to ${name}...`);
-          await sendTemplateMoveCab(phoneNumber, name);
-          console.log(`✅ [Step 6] Scheduled template sent to ${name} (${phoneNumber})`);
-        } catch (err) {
-          console.error(`❌ [Step 6] Failed to send scheduled template to ${name}:`, err.message);
-        }
+        console.log(`✅ WhatsApp template sent to ${name} (${phoneNumber})`);
       } else {
-        console.log(`🛑 [Step 6] Passenger ${name} was onboarded before bufferEnd. No message sent.`);
+        console.log(`🛑 Passenger ${name} was already onboarded before bufferEnd. No message sent.`);
       }
-    }, delay);
+    } catch (err) {
+      console.error(`❌ Failed to send bufferEnd notification for ${name}:`, err.message);
+    }
+  };
+
+  if (delay <= 0) {
+    console.log("⚡ bufferEnd is in the past. Sending immediately if not boarded...");
+    await sendTemplateIfStillNotBoarded();
+  } else {
+    console.log("⏲️ Scheduling WhatsApp template to send at bufferEnd...");
+    setTimeout(sendTemplateIfStillNotBoarded, delay);
   }
 };
 
