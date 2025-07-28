@@ -155,15 +155,16 @@ export const schedulePickupNotification = async (passenger, bufferStart) => {
   const templateName = 'pick_up_passenger_notification_before_10_minutes__';
   const broadcastName = `pick_up_passenger_notification_before_10_minutes___${formatBroadcastName(bufferStart)}`;
 
-  console.log(`👤 Passenger: ${name}, Phone: ${phoneNumber}`);
-  console.log(`🕒 Original Pickup Time (bufferStart): ${new Date(bufferStart).toISOString()}`);
-
   const pickupDate = new Date(bufferStart);
   const sendTime = new Date(pickupDate.getTime() - 10 * 60 * 1000); // 10 minutes before
   const delay = sendTime.getTime() - Date.now();
 
+  const { hours, minutes, seconds } = convertMillisecondsToTime(delay);
+
+  console.log(`👤 Passenger: ${name}, Phone: ${phoneNumber}`);
+  console.log(`🕒 Pickup Time: ${pickupDate.toISOString()}`);
   console.log(`🕑 Notification scheduled for: ${sendTime.toISOString()}`);
-  console.log(`⏳ Delay until send (ms): ${delay}`);
+  console.log(`⏳ Delay: ${delay} ms (${hours}h ${minutes}m ${seconds}s)`);
 
   if (delay <= 0) {
     console.log("⚠️ Pickup is too close or in the past. Sending notification immediately.");
@@ -196,3 +197,92 @@ function formatBroadcastName(pickupTime) {
   const min = String(dt.getMinutes()).padStart(2, '0');
   return `${day}${month}${year}${hour}${min}`;
 }
+
+function convertMillisecondsToTime(ms) {
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return { hours, minutes, seconds };
+}
+
+
+
+
+
+// send template on buffer End time
+
+// Send template only if passenger hasn't onboarded before bufferEnd
+export const scheduleBufferEndNotification = async (passenger, bufferEnd, isPassengerOnboarded) => {
+  console.log("📦 Scheduling bufferEnd notification with onboard check...");
+
+  const phoneNumber = passenger?.Employee_PhoneNumber;
+  const name = passenger?.Employee_Name;
+
+  if (!phoneNumber || !name || !bufferEnd || isNaN(new Date(bufferEnd).getTime())) {
+    console.warn(`❌ Invalid passenger data. name=${name}, phone=${phoneNumber}, bufferEnd=${bufferEnd}`);
+    return;
+  }
+
+  // Step 1: Start with flag set to true
+  let shouldSendTemplate = true;
+
+  // Step 2: If onboarded now (before scheduling), cancel sending
+  if (isPassengerOnboarded(passenger)) {
+    shouldSendTemplate = false;
+    console.log(`🛑 Passenger ${name} is already onboarded. Skipping template scheduling.`);
+    return;
+  }
+
+  const now = new Date();
+  const sendTime = new Date(bufferEnd);
+  const delay = sendTime.getTime() - now.getTime();
+
+  const { hours, minutes, seconds } = convertMillisecondsToTimeBufferEnd(delay);
+
+  console.log(`👤 Passenger: ${name}, Phone: ${phoneNumber}`);
+  console.log(`📅 bufferEnd Time: ${sendTime.toISOString()}`);
+  console.log(`🕒 Current Time: ${now.toISOString()}`);
+  console.log(`⏳ Time until bufferEnd: ${delay} ms (${hours}h ${minutes}m ${seconds}s)`);
+
+  // Step 3: If bufferEnd is now or in the past, check flag and send immediately
+  if (delay <= 0) {
+    if (shouldSendTemplate) {
+      console.log("🚀 bufferEnd has passed. Sending WhatsApp template immediately...");
+      try {
+        await sendTemplateMoveCab(phoneNumber, name);
+        console.log(`✅ WhatsApp template sent to ${name} (${phoneNumber})`);
+      } catch (err) {
+        console.error(`❌ Failed to send template to ${name}:`, err.message);
+      }
+    } else {
+      console.log(`🛑 Skipped sending template to ${name} — onboarded already.`);
+    }
+  } else {
+    console.log("⏳ Scheduling message to send exactly at bufferEnd...");
+    setTimeout(async () => {
+      // Step 4: Re-check if onboarded before sending
+      if (!isPassengerOnboarded(passenger)) {
+        console.log(`🚀 bufferEnd reached. Sending WhatsApp template to ${name}...`);
+        try {
+          await sendTemplateMoveCab(phoneNumber, name);
+          console.log(`✅ Scheduled template sent to ${name} (${phoneNumber})`);
+        } catch (err) {
+          console.error(`❌ Failed to send scheduled template to ${name}:`, err.message);
+        }
+      } else {
+        console.log(`🛑 Passenger ${name} onboarded before bufferEnd. No message sent.`);
+      }
+    }, delay);
+  }
+};
+
+// 🔧 Format delay to readable time
+function convertMillisecondsToTimeBufferEnd(ms) {
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return { hours, minutes, seconds };
+}
+
