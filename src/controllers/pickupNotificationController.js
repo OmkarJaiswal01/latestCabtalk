@@ -214,6 +214,67 @@ function convertMillisecondsToTime(ms) {
 // send template on buffer End time
 
 // Send template only if passenger hasn't onboarded before bufferEnd
+// export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
+//   console.log("📦 [Step 0] Starting bufferEnd notification scheduling...");
+
+//   const phoneNumber = passenger?.Employee_PhoneNumber;
+//   const name = passenger?.Employee_Name;
+
+//   // Step 1: Validate input
+//   console.log("✅ [Step 1] Validating passenger data...");
+//   if (!phoneNumber || !name || !bufferEnd || isNaN(new Date(bufferEnd).getTime())) {
+//     console.warn(`❌ [Step 1] Invalid passenger data. name=${name}, phone=${phoneNumber}, bufferEnd=${bufferEnd}`);
+//     return;
+//   }
+
+//   const now = new Date();
+//   const sendTime = new Date(bufferEnd);
+//   const delay = sendTime.getTime() - now.getTime();
+
+//   const { hours, minutes, seconds } = convertMillisecondsToTimeBufferEnd(delay);
+//   console.log(`📋 Passenger: ${name}, Phone: ${phoneNumber}`);
+//   console.log(`📅 bufferEnd Time: ${sendTime.toISOString()}`);
+//   console.log(`🕒 Current Time: ${now.toISOString()}`);
+//   console.log(`⏳ Time until bufferEnd: ${delay} ms (${hours}h ${minutes}m ${seconds}s)`);
+
+//   const sendTemplateIfStillNotBoarded = async () => {
+//     try {
+//       // Step 2: Find the journey where this passenger is in the asset.passengers
+//       const journey = await Journey.findOne({
+//         "Asset.passengers.passengers.passenger": passenger._id,
+//       }).populate("boardedPassengers.passenger", "Employee_PhoneNumber");
+
+//       if (!journey) {
+//         console.warn(`❌ No active journey found for ${name} (${phoneNumber})`);
+//         return;
+//       }
+
+//       // Step 3: Check if already boarded
+//       const stillNotBoarded = !journey.boardedPassengers.some(bp =>
+//         bp.passenger._id.equals(passenger._id)
+//       );
+
+//       if (stillNotBoarded) {
+//         console.log(`📨 Sending WhatsApp template to ${name} at bufferEnd...`);
+//         await sendTemplateMoveCab(phoneNumber, name);
+//         console.log(`✅ WhatsApp template sent to ${name} (${phoneNumber})`);
+//       } else {
+//         console.log(`🛑 Passenger ${name} was already onboarded before bufferEnd. No message sent.`);
+//       }
+//     } catch (err) {
+//       console.error(`❌ Failed to send bufferEnd notification for ${name}:`, err.message);
+//     }
+//   };
+
+//   if (delay <= 0) {
+//     console.log("⚡ bufferEnd is in the past. Sending immediately if not boarded...");
+//     await sendTemplateIfStillNotBoarded();
+//   } else {
+//     console.log("⏲️ Scheduling WhatsApp template to send at bufferEnd...");
+//     setTimeout(sendTemplateIfStillNotBoarded, delay);
+//   }
+// };
+
 export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
   console.log("📦 [Step 0] Starting bufferEnd notification scheduling...");
 
@@ -239,13 +300,15 @@ export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
 
   const sendTemplateIfStillNotBoarded = async () => {
     try {
-      // Step 2: Find the journey where this passenger is in the asset.passengers
+      // Step 2: Find the latest "pickup" journey involving this passenger
       const journey = await Journey.findOne({
+        Journey_Type: { $regex: /^pickup$/i }, // match case-insensitively
         "Asset.passengers.passengers.passenger": passenger._id,
-      }).populate("boardedPassengers.passenger", "Employee_PhoneNumber");
+      }).sort({ createdAt: -1 }) // get latest
+        .populate("boardedPassengers.passenger", "Employee_PhoneNumber");
 
       if (!journey) {
-        console.warn(`❌ No active journey found for ${name} (${phoneNumber})`);
+        console.warn(`❌ No active pickup journey found for ${name} (${phoneNumber})`);
         return;
       }
 
@@ -255,11 +318,11 @@ export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
       );
 
       if (stillNotBoarded) {
-        console.log(`📨 Sending WhatsApp template to ${name} at bufferEnd...`);
+        console.log(`📨 [BufferEnd] Sending WhatsApp template to ${name} (${phoneNumber})...`);
         await sendTemplateMoveCab(phoneNumber, name);
-        console.log(`✅ WhatsApp template sent to ${name} (${phoneNumber})`);
+        console.log(`✅ WhatsApp template sent.`);
       } else {
-        console.log(`🛑 Passenger ${name} was already onboarded before bufferEnd. No message sent.`);
+        console.log(`🛑 Passenger ${name} boarded before bufferEnd. No message sent.`);
       }
     } catch (err) {
       console.error(`❌ Failed to send bufferEnd notification for ${name}:`, err.message);
