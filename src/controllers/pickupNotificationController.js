@@ -3,6 +3,7 @@ import Journey from "../models/JourneyModel.js";
 import { sendPickupConfirmationMessage } from "../utils/PickUpPassengerSendTem.js";
 import { sendOtherPassengerSameShiftUpdateMessage } from "../utils/InformOtherPassenger.js";
 import {sendPickupTemplateBefore10Min} from "../utils/sendTempleteBeforeTenMinites.js"
+import {sendTemplateMoveCab} from "../utils/sendTemplateMoveCab.js"
 
 export const sendPickupConfirmation = async (req, res) => {
   try {
