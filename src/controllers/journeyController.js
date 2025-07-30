@@ -647,6 +647,7 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
         console.log(`⏳ Scheduling bufferEnd for ${passenger.Employee_Name}`);
         console.log("ye hai waid ka value", waId)
         await scheduleBufferEndNotification(passenger, bufferEnd, waId);
+         await sendWhatsAppMessage(waId, "⚠️ The passenger is late. You can move the cab now.");
         // await sendWhatsAppMessage(waId, "⚠️ The passenger is late. You can move the cab now.");
 
       } else {

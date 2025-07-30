@@ -472,11 +472,14 @@ export const scheduleBufferEndNotification = async (passenger, bufferEnd, waId) 
       if (!hasBoarded) {
         console.log(`📨 Passenger ${name} NOT boarded. Sending reminder...`);
         await sendTemplateMoveCab(phoneNumber, name);
-        await sendWhatsAppMessage(waId, "⚠️ The passenger is late. You can move the cab now.");
+        // await sendWhatsAppMessage(waId, "⚠️ The passenger is late. You can move the cab now.");
         console.log(`✅ Reminder sent to ${name} (${phoneNumber})`);
       } else {
         console.log(`🛑 Passenger ${name} already boarded. No reminder needed.`);
       }
+
+
+
     } catch (err) {
       console.error(`❌ Error checking boarding for ${name}:`, err.message);
     }
