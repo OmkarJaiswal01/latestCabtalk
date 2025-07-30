@@ -496,14 +496,14 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
     const passengerPhone = listReply.title.match(/(\d{12})$/)[0];
     console.log(`📞 [Step 2] Extracted passenger phone: ${passengerPhone}`);
 
-    // Step 3: Fetch driver from database
     console.log(`🔎 [Step 3] Looking up driver for waId: ${waId}...`);
     const driver = await Driver.findOne({ phoneNumber: waId });
-    const driverContact=driver.phoneNumber;
     if (!driver) {
       console.log("🛑 [Step 3] Driver not found.");
       return;
     }
+    const driverContact = driver.phoneNumber.replace(/\D/g, "");
+    console.log("ye hai hai driver ka number", driverContact)
 
     // Step 4: Fetch journey and populate references
     console.log("🚐 [Step 4] Fetching journey for driver...");
@@ -647,7 +647,7 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
 
       if (bufferEnd) {
         console.log(`⏳ Scheduling bufferEnd for ${passenger.Employee_Name}`);
-        await scheduleBufferEndNotification(passenger, bufferEnd,driverContact);
+        await scheduleBufferEndNotification(passenger, bufferEnd, driverContact);
         // await sendWhatsAppMessage(waId, "⚠️ The passenger is late. You can move the cab now.");
 
       } else {
@@ -672,4 +672,3 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
     console.error("❌ [ERROR] handleWatiWebhook:", err);
   }
 });
-
