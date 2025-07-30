@@ -4,7 +4,7 @@ import { sendPickupConfirmationMessage } from "../utils/PickUpPassengerSendTem.j
 import { sendOtherPassengerSameShiftUpdateMessage } from "../utils/InformOtherPassenger.js";
 import {sendPickupTemplateBefore10Min} from "../utils/sendTempleteBeforeTenMinites.js"
 import {sendTemplateMoveCab} from "../utils/sendTemplateMoveCab.js"
-
+import {sendWhatsAppMessage} from "../utils/whatsappHelper.js"
 export const sendPickupConfirmation = async (req, res) => {
   try {
     const { pickedPassengerPhoneNumber } = req.body;
@@ -335,6 +335,7 @@ export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
       if (!hasBoarded) {
         console.log(`📨 Passenger ${name} NOT boarded. Sending reminder...`);
         await sendTemplateMoveCab(phoneNumber, name);
+        await sendWhatsAppMessage(waId, "⚠️ The passenger is late. You can move the cab now.");
         console.log(`✅ Reminder sent to ${name} (${phoneNumber})`);
       } else {
         console.log(`🛑 Passenger ${name} already boarded. No reminder needed.`);
