@@ -258,6 +258,8 @@ export const createJourney = async (req, res) => {
           if (bufferEnd) {
             try {
               await scheduleBufferEndNotification(passenger, bufferEnd);
+               await sendWhatsAppMessage(waId, "⚠️ The passenger is late. You can move the cab now.");
+             
               console.log(`🕒 Missed-boarding check scheduled for ${passenger.Employee_Name}`);
             } catch (err) {
               console.error(`❌ Failed to schedule bufferEnd check for ${passenger.Employee_Name}:`, err.message);
@@ -647,7 +649,7 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
         console.log(`⏳ Scheduling bufferEnd for ${passenger.Employee_Name}`);
         console.log("ye hai waid ka value", waId)
         await scheduleBufferEndNotification(passenger, bufferEnd, waId);
-         await sendWhatsAppMessage(waId, "⚠️ The passenger is late. You can move the cab now.");
+        
         // await sendWhatsAppMessage(waId, "⚠️ The passenger is late. You can move the cab now.");
 
       } else {
