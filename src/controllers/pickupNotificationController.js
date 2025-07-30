@@ -303,12 +303,27 @@ export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
 
       const journey = await Journey.findOne({
         Journey_Type: { $regex: /^pickup$/, $options: "i" },
-        "Asset.passengers.passengers.passenger": passenger._id,
       })
         .sort({ createdAt: -1 })
+        .populate({
+          path: "Asset",
+          select: "passengers",
+          populate: {
+            path: "passengers.passengers.passenger",
+            model: "Passenger",
+            select: "Employee_Name Employee_PhoneNumber",
+          },
+        })
         .populate("boardedPassengers.passenger", "Employee_PhoneNumber");
 
-      if (!journey) {
+      // Check if passenger is assigned in asset shifts
+      const passengerAssigned = journey?.Asset?.passengers?.some((shift) =>
+        shift.passengers.some((p) =>
+          p.passenger?._id?.toString() === passenger._id?.toString()
+        )
+      );
+
+      if (!journey || !passengerAssigned) {
         console.warn(`❌ No pickup journey found for passenger: ${name}`);
         return;
       }
@@ -347,6 +362,7 @@ function convertMillisecondsToTimeBufferEnd(ms) {
   const seconds = totalSeconds % 60;
   return { hours, minutes, seconds };
 }
+
 
 
 
