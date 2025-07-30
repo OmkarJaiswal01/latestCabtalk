@@ -226,6 +226,7 @@ export const addMultiplePassengersToAsset = asyncHandler(async (req, res) => {
           "assetId, non-empty passengers array, and shift are required.",
       });
     }
+
     for (const p of passengers) {
       if (
         !p.id ||
@@ -244,6 +245,7 @@ export const addMultiplePassengersToAsset = asyncHandler(async (req, res) => {
         });
       }
     }
+    
     const [asset, passengerDocs] = await Promise.all([
       Asset.findById(assetId),
       Passenger.find({ _id: { $in: passengers.map(p => p.id) } })

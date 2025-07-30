@@ -278,12 +278,13 @@ function convertMillisecondsToTime(ms) {
 export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
   console.log("📦 [Step 0] Scheduling bufferEnd notification...");
 
-  const phoneNumber = passenger?.Employee_PhoneNumber;
-  const name = passenger?.Employee_Name;
+  const phoneNumber = passenger?.Employee_PhoneNumber?.trim();
+  const name = passenger?.Employee_Name?.trim();
+  const passengerId = passenger?._id;
 
   // ✅ Step 1: Validate inputs
-  if (!phoneNumber || !name || !bufferEnd || isNaN(new Date(bufferEnd).getTime())) {
-    console.warn(`❌ Invalid input. name=${name}, phone=${phoneNumber}, bufferEnd=${bufferEnd}`);
+  if (!phoneNumber || !name || !bufferEnd || !passengerId || isNaN(new Date(bufferEnd).getTime())) {
+    console.warn(`❌ Invalid input. name=${name}, phone=${phoneNumber}, bufferEnd=${bufferEnd}, passengerId=${passengerId}`);
     return;
   }
 
@@ -293,49 +294,49 @@ export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
 
   const { hours, minutes, seconds } = convertMillisecondsToTimeBufferEnd(delay);
   console.log(`📅 bufferEnd for ${name}: ${sendTime.toISOString()}`);
-  console.log(`⏳ Notification in: ${hours}h ${minutes}m ${seconds}s (${delay}ms)`);
+  console.log(`⏳ Notification scheduled in: ${hours}h ${minutes}m ${seconds}s (${delay}ms)`);
 
   // 🔄 Step 2: Function to run at bufferEnd
   const sendIfStillNotBoarded = async () => {
     try {
-      console.log(`🔍 Checking if ${name} (${phoneNumber}) has boarded...`);
+      console.log(`🔍 [Check] Verifying if ${name} (${phoneNumber}) has boarded...`);
 
       // ✅ Step 2.1: Find latest pickup journey that includes this passenger
       const journey = await Journey.findOne({
         Journey_Type: { $regex: /^pickup$/, $options: "i" },
-        "Asset.passengers.passengers.passenger": passenger._id,
+        "Asset.passengers.passengers.passenger": passengerId,
       })
-        .sort({ createdAt: -1 }) // latest journey first
+        .sort({ createdAt: -1 }) // latest journey
         .populate("boardedPassengers.passenger", "Employee_PhoneNumber");
 
       if (!journey) {
-        console.warn(`❌ No pickup journey found for passenger: ${name}`);
+        console.warn(`❌ No active pickup journey found for ${name}`);
         return;
       }
 
       // ✅ Step 2.2: Check if passenger already boarded
       const isBoarded = journey.boardedPassengers?.some(bp =>
-        bp.passenger?._id?.equals(passenger._id)
+        bp.passenger?._id?.equals(passengerId)
       );
 
       if (!isBoarded) {
-        console.log(`📨 Passenger ${name} NOT boarded. Sending reminder...`);
+        console.log(`📨 ${name} has NOT boarded. Sending template...`);
         await sendTemplateMoveCab(phoneNumber, name);
-        console.log(`✅ Reminder sent to ${name} (${phoneNumber})`);
+        console.log(`✅ Missed boarding reminder sent to ${name} (${phoneNumber})`);
       } else {
-        console.log(`🛑 Passenger ${name} already boarded. No reminder needed.`);
+        console.log(`🛑 ${name} already boarded. No action needed.`);
       }
     } catch (err) {
-      console.error(`❌ Error while checking boarding status for ${name}:`, err.message);
+      console.error(`❌ Error checking boarding status for ${name}:`, err);
     }
   };
 
   // ⏲️ Step 3: Schedule or send immediately
   if (delay <= 0) {
-    console.log("⚠️ bufferEnd already passed. Sending check immediately.");
+    console.log("⚠️ bufferEnd has passed. Executing check now.");
     await sendIfStillNotBoarded();
   } else {
-    console.log(`⏳ Scheduling check in ${delay / 1000}s`);
+    console.log(`⏳ Setting timer for bufferEnd check in ${Math.floor(delay / 1000)} seconds.`);
     setTimeout(sendIfStillNotBoarded, delay);
   }
 };
@@ -348,4 +349,5 @@ function convertMillisecondsToTimeBufferEnd(ms) {
   const seconds = totalSeconds % 60;
   return { hours, minutes, seconds };
 }
+
 

@@ -358,7 +358,7 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
           select: "Employee_ID Employee_Name Employee_PhoneNumber",
         },
       })
-      .populate("boardedPassengers.passenger", "Employee_Name Employee_PhoneNumber");
+      .populate("boardedPassengers.passenger", "Employee_Name Employee_PhoneNumber");  
 
     if (!journey) {
       console.log("🛑 [Step 4] Journey not found.");
