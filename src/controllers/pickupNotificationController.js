@@ -275,16 +275,16 @@ function convertMillisecondsToTime(ms) {
 //   }
 // };
 
+
 export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
   console.log("📦 [Step 0] Scheduling bufferEnd notification...");
 
-  const phoneNumber = passenger?.Employee_PhoneNumber?.trim();
-  const name = passenger?.Employee_Name?.trim();
-  const passengerId = passenger?._id;
+  const phoneNumber = passenger?.Employee_PhoneNumber;
+  const name = passenger?.Employee_Name;
 
   // ✅ Step 1: Validate inputs
-  if (!phoneNumber || !name || !bufferEnd || !passengerId || isNaN(new Date(bufferEnd).getTime())) {
-    console.warn(`❌ Invalid input. name=${name}, phone=${phoneNumber}, bufferEnd=${bufferEnd}, passengerId=${passengerId}`);
+  if (!phoneNumber || !name || !bufferEnd || isNaN(new Date(bufferEnd).getTime())) {
+    console.warn(`❌ Invalid input. name=${name}, phone=${phoneNumber}, bufferEnd=${bufferEnd}`);
     return;
   }
 
@@ -294,54 +294,52 @@ export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
 
   const { hours, minutes, seconds } = convertMillisecondsToTimeBufferEnd(delay);
   console.log(`📅 bufferEnd for ${name}: ${sendTime.toISOString()}`);
-  console.log(`⏳ Notification scheduled in: ${hours}h ${minutes}m ${seconds}s (${delay}ms)`);
+  console.log(`⏳ Notification in: ${hours}h ${minutes}m ${seconds}s (${delay}ms)`);
 
   // 🔄 Step 2: Function to run at bufferEnd
   const sendIfStillNotBoarded = async () => {
     try {
-      console.log(`🔍 [Check] Verifying if ${name} (${phoneNumber}) has boarded...`);
+      console.log(`🔍 Checking if ${name} (${phoneNumber}) has boarded...`);
 
-      // ✅ Step 2.1: Find latest pickup journey that includes this passenger
       const journey = await Journey.findOne({
         Journey_Type: { $regex: /^pickup$/, $options: "i" },
-        "Asset.passengers.passengers.passenger": passengerId,
+        "Asset.passengers.passengers.passenger": passenger._id,
       })
-        .sort({ createdAt: -1 }) // latest journey
+        .sort({ createdAt: -1 })
         .populate("boardedPassengers.passenger", "Employee_PhoneNumber");
 
       if (!journey) {
-        console.warn(`❌ No active pickup journey found for ${name}`);
+        console.warn(`❌ No pickup journey found for passenger: ${name}`);
         return;
       }
 
-      // ✅ Step 2.2: Check if passenger already boarded
-      const isBoarded = journey.boardedPassengers?.some(bp =>
-        bp.passenger?._id?.equals(passengerId)
+      const hasBoarded = journey.boardedPassengers?.some(bp =>
+        bp.passenger?._id?.toString() === passenger._id?.toString()
       );
 
-      if (!isBoarded) {
-        console.log(`📨 ${name} has NOT boarded. Sending template...`);
+      if (!hasBoarded) {
+        console.log(`📨 Passenger ${name} NOT boarded. Sending reminder...`);
         await sendTemplateMoveCab(phoneNumber, name);
-        console.log(`✅ Missed boarding reminder sent to ${name} (${phoneNumber})`);
+        console.log(`✅ Reminder sent to ${name} (${phoneNumber})`);
       } else {
-        console.log(`🛑 ${name} already boarded. No action needed.`);
+        console.log(`🛑 Passenger ${name} already boarded. No reminder needed.`);
       }
     } catch (err) {
-      console.error(`❌ Error checking boarding status for ${name}:`, err);
+      console.error(`❌ Error checking boarding for ${name}:`, err.message);
     }
   };
 
   // ⏲️ Step 3: Schedule or send immediately
   if (delay <= 0) {
-    console.log("⚠️ bufferEnd has passed. Executing check now.");
+    console.log("⚠️ bufferEnd already passed. Sending check immediately.");
     await sendIfStillNotBoarded();
   } else {
-    console.log(`⏳ Setting timer for bufferEnd check in ${Math.floor(delay / 1000)} seconds.`);
+    console.log(`⏳ Scheduling check in ${delay / 1000}s`);
     setTimeout(sendIfStillNotBoarded, delay);
   }
 };
 
-// 🔧 Utility: Format milliseconds into time breakdown
+// 🔧 Utility to convert milliseconds to human-readable time
 function convertMillisecondsToTimeBufferEnd(ms) {
   const totalSeconds = Math.floor(ms / 1000);
   const hours = Math.floor(totalSeconds / 3600);
@@ -349,5 +347,6 @@ function convertMillisecondsToTimeBufferEnd(ms) {
   const seconds = totalSeconds % 60;
   return { hours, minutes, seconds };
 }
+
 
 
