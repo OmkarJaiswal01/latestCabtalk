@@ -1,4 +1,5 @@
 import Asset from "../models/assetModel.js";
+import Driver from "../models/driverModel.js";
 import Journey from "../models/JourneyModel.js";
 import { sendPickupConfirmationMessage } from "../utils/PickUpPassengerSendTem.js";
 import { sendOtherPassengerSameShiftUpdateMessage } from "../utils/InformOtherPassenger.js";
@@ -411,7 +412,7 @@ function convertMillisecondsToTime(ms) {
 // };
 
 
-export const scheduleBufferEndNotification = async (passenger, bufferEnd, waId) => {
+export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
   console.log("📦 [Step 0] Scheduling bufferEnd notification...");
 
   const phoneNumber = passenger?.Employee_PhoneNumber;
@@ -423,11 +424,12 @@ export const scheduleBufferEndNotification = async (passenger, bufferEnd, waId) 
     return;
   }
 
-  console.log("ye hai id waId", waId)
+ 
 
   const now = new Date();
   const sendTime = new Date(bufferEnd);
   const delay = sendTime.getTime() - now.getTime();
+  
 
   const { hours, minutes, seconds } = convertMillisecondsToTimeBufferEnd(delay);
   console.log(`📅 bufferEnd for ${name}: ${sendTime.toISOString()}`);
@@ -442,6 +444,7 @@ export const scheduleBufferEndNotification = async (passenger, bufferEnd, waId) 
         Journey_Type: { $regex: /^pickup$/, $options: "i" },
       })
         .sort({ createdAt: -1 })
+        .populate("Driver", "phoneNumber")
         .populate({
           path: "Asset",
           select: "passengers",
@@ -452,6 +455,8 @@ export const scheduleBufferEndNotification = async (passenger, bufferEnd, waId) 
           },
         })
         .populate("boardedPassengers.passenger", "Employee_PhoneNumber");
+
+        const driverPhoneNumber=journey?.Driver?.phoneNumber;
 
       // Check if passenger is assigned in asset shifts
       const passengerAssigned = journey?.Asset?.passengers?.some((shift) =>
@@ -472,7 +477,7 @@ export const scheduleBufferEndNotification = async (passenger, bufferEnd, waId) 
       if (!hasBoarded) {
         console.log(`📨 Passenger ${name} NOT boarded. Sending reminder...`);
         await sendTemplateMoveCab(phoneNumber, name);
-        // await sendWhatsAppMessage(waId, "⚠️ The passenger is late. You can move the cab now.");
+        await sendWhatsAppMessage(driverPhoneNumber, "⚠️ The passenger is late. You can move the cab now.");
         console.log(`✅ Reminder sent to ${name} (${phoneNumber})`);
       } else {
         console.log(`🛑 Passenger ${name} already boarded. No reminder needed.`);
