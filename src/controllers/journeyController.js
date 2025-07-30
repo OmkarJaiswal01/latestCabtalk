@@ -499,6 +499,7 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
     // Step 3: Fetch driver from database
     console.log(`🔎 [Step 3] Looking up driver for waId: ${waId}...`);
     const driver = await Driver.findOne({ phoneNumber: waId });
+    const driverContact=driver.phoneNumber;
     if (!driver) {
       console.log("🛑 [Step 3] Driver not found.");
       return;
@@ -646,7 +647,7 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
 
       if (bufferEnd) {
         console.log(`⏳ Scheduling bufferEnd for ${passenger.Employee_Name}`);
-        await scheduleBufferEndNotification(passenger, bufferEnd,waId);
+        await scheduleBufferEndNotification(passenger, bufferEnd,driverContact);
         // await sendWhatsAppMessage(waId, "⚠️ The passenger is late. You can move the cab now.");
 
       } else {
