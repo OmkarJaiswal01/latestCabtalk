@@ -412,6 +412,104 @@ function convertMillisecondsToTime(ms) {
 // };
 
 
+// export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
+//   console.log("📦 [Step 0] Scheduling bufferEnd notification...");
+
+//   const phoneNumber = passenger?.Employee_PhoneNumber;
+//   const name = passenger?.Employee_Name;
+
+//   // ✅ Step 1: Validate inputs
+//   if (!phoneNumber || !name || !bufferEnd || isNaN(new Date(bufferEnd).getTime())) {
+//     console.warn(`❌ Invalid input. name=${name}, phone=${phoneNumber}, bufferEnd=${bufferEnd}`);
+//     return;
+//   }
+
+ 
+
+//   const now = new Date();
+//   const sendTime = new Date(bufferEnd);
+//   const delay = sendTime.getTime() - now.getTime();
+  
+
+//   const { hours, minutes, seconds } = convertMillisecondsToTimeBufferEnd(delay);
+//   console.log(`📅 bufferEnd for ${name}: ${sendTime.toISOString()}`);
+//   console.log(`⏳ Notification in: ${hours}h ${minutes}m ${seconds}s (${delay}ms)`);
+
+//   // 🔄 Step 2: Function to run at bufferEnd
+//   const sendIfStillNotBoarded = async () => {
+//     try {
+//       console.log(`🔍 Checking if ${name} (${phoneNumber}) has boarded...`);
+
+//       const journey = await Journey.findOne({
+//         Journey_Type: { $regex: /^pickup$/, $options: "i" },
+//       })
+//         .sort({ createdAt: -1 })
+//         .populate("Driver", "phoneNumber")
+//         .populate({
+//           path: "Asset",
+//           select: "passengers",
+//           populate: {
+//             path: "passengers.passengers.passenger",
+//             model: "Passenger",
+//             select: "Employee_Name Employee_PhoneNumber",
+//           },
+//         })
+//         .populate("boardedPassengers.passenger", "Employee_PhoneNumber");
+
+//         const driverPhoneNumber=journey?.Driver?.phoneNumber;
+
+//       // Check if passenger is assigned in asset shifts
+//       const passengerAssigned = journey?.Asset?.passengers?.some((shift) =>
+//         shift.passengers.some((p) =>
+//           p.passenger?._id?.toString() === passenger._id?.toString()
+//         )
+//       );
+
+//       if (!journey || !passengerAssigned) {
+//         console.warn(`❌ No pickup journey found for passenger: ${name}`);
+//         return;
+//       }
+
+//       const hasBoarded = journey.boardedPassengers?.some(bp =>
+//         bp.passenger?._id?.toString() === passenger._id?.toString()
+//       );
+
+//       if (!hasBoarded) {
+//         console.log(`📨 Passenger ${name} NOT boarded. Sending reminder...`);
+//         await sendTemplateMoveCab(phoneNumber, name);
+//         await sendWhatsAppMessage(driverPhoneNumber, "⚠️ The passenger is late. You can move the cab now.");
+//         console.log(`✅ Reminder sent to ${name} (${phoneNumber})`);
+//       } else {
+//         console.log(`🛑 Passenger ${name} already boarded. No reminder needed.`);
+//       }
+
+
+
+//     } catch (err) {
+//       console.error(`❌ Error checking boarding for ${name}:`, err.message);
+//     }
+//   };
+
+//   // ⏲️ Step 3: Schedule or send immediately
+//   if (delay <= 0) {
+//     console.log("⚠️ bufferEnd already passed. Sending check immediately.");
+//     await sendIfStillNotBoarded();
+//   } else {
+//     console.log(`⏳ Scheduling check in ${delay / 1000}s`);
+//     setTimeout(sendIfStillNotBoarded, delay);
+//   }
+// };
+
+// // 🔧 Utility to convert milliseconds to human-readable time
+// function convertMillisecondsToTimeBufferEnd(ms) {
+//   const totalSeconds = Math.floor(ms / 1000);
+//   const hours = Math.floor(totalSeconds / 3600);
+//   const minutes = Math.floor((totalSeconds % 3600) / 60);
+//   const seconds = totalSeconds % 60;
+//   return { hours, minutes, seconds };
+// }
+
+
 export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
   console.log("📦 [Step 0] Scheduling bufferEnd notification...");
 
@@ -424,12 +522,9 @@ export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
     return;
   }
 
- 
-
   const now = new Date();
   const sendTime = new Date(bufferEnd);
   const delay = sendTime.getTime() - now.getTime();
-  
 
   const { hours, minutes, seconds } = convertMillisecondsToTimeBufferEnd(delay);
   console.log(`📅 bufferEnd for ${name}: ${sendTime.toISOString()}`);
@@ -456,7 +551,13 @@ export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
         })
         .populate("boardedPassengers.passenger", "Employee_PhoneNumber");
 
-        const driverPhoneNumber=journey?.Driver?.phoneNumber;
+      if (!journey) {
+        console.warn(`❌ No journey found.`);
+        return;
+      }
+
+      const driverPhoneNumber = journey?.Driver?.phoneNumber;
+      console.log("🚗 Driver phone number:", driverPhoneNumber);
 
       // Check if passenger is assigned in asset shifts
       const passengerAssigned = journey?.Asset?.passengers?.some((shift) =>
@@ -465,8 +566,8 @@ export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
         )
       );
 
-      if (!journey || !passengerAssigned) {
-        console.warn(`❌ No pickup journey found for passenger: ${name}`);
+      if (!passengerAssigned) {
+        console.warn(`❌ Passenger not assigned to journey asset.`);
         return;
       }
 
@@ -475,15 +576,27 @@ export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
       );
 
       if (!hasBoarded) {
-        console.log(`📨 Passenger ${name} NOT boarded. Sending reminder...`);
+        console.log(`📨 Passenger ${name} NOT boarded. Sending messages...`);
+
+        // Step 1: Notify passenger
         await sendTemplateMoveCab(phoneNumber, name);
-        await sendWhatsAppMessage(driverPhoneNumber, "⚠️ The passenger is late. You can move the cab now.");
-        console.log(`✅ Reminder sent to ${name} (${phoneNumber})`);
+        console.log(`✅ Passenger message sent to ${phoneNumber}`);
+
+        // Step 2: Notify driver
+        if (!driverPhoneNumber || driverPhoneNumber.length < 10) {
+          console.warn(`⚠️ Driver phone number invalid or missing: ${driverPhoneNumber}`);
+        } else {
+          try {
+            const message = "⚠️ The passenger is late. You can move the cab now.";
+            await sendWhatsAppMessage(driverPhoneNumber, message);
+            console.log(`✅ Driver notified at ${driverPhoneNumber}`);
+          } catch (err) {
+            console.error("❌ Failed to send message to driver:", err.response?.data || err.message);
+          }
+        }
       } else {
         console.log(`🛑 Passenger ${name} already boarded. No reminder needed.`);
       }
-
-
 
     } catch (err) {
       console.error(`❌ Error checking boarding for ${name}:`, err.message);
@@ -508,7 +621,6 @@ function convertMillisecondsToTimeBufferEnd(ms) {
   const seconds = totalSeconds % 60;
   return { hours, minutes, seconds };
 }
-
 
 
 
