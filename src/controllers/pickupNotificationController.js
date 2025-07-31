@@ -282,6 +282,7 @@ import {sendWhatsAppMessage} from "../utils/whatsappHelper.js"
 export const sendPickupConfirmation = async (req, res) => {
   try {
     const { pickedPassengerPhoneNumber } = req.body;
+
     if (!pickedPassengerPhoneNumber) {
       return res.status(400).json({
         success: false,
@@ -301,7 +302,7 @@ export const sendPickupConfirmation = async (req, res) => {
       "passengers.passengers.passenger": { $exists: true },
     }).populate({
       path: "passengers.passengers.passenger",
-      select: "Employee_PhoneNumber Employee_Name bufferEnd",
+      select: "Employee_PhoneNumber Employee_Name",
     });
 
     if (!asset) {
@@ -309,7 +310,7 @@ export const sendPickupConfirmation = async (req, res) => {
     }
 
     let pickedPassenger = null;
-    let currentShiftPassengers = [];
+
     for (const shift of asset.passengers) {
       const match = shift.passengers.find(
         (sp) =>
@@ -317,7 +318,6 @@ export const sendPickupConfirmation = async (req, res) => {
       );
       if (match) {
         pickedPassenger = match.passenger;
-        currentShiftPassengers = shift.passengers.map((sp) => sp.passenger);
         break;
       }
     }
@@ -344,6 +344,7 @@ export const sendPickupConfirmation = async (req, res) => {
       (bp) =>
         (bp.passenger.Employee_PhoneNumber || "").replace(/\D/g, "") === cleanedPhone
     );
+
     if (alreadyBoarded) {
       return res.status(400).json({ success: false, message: "Passenger already boarded." });
     }
@@ -367,35 +368,40 @@ export const sendPickupConfirmation = async (req, res) => {
 
     const notifiedPassengers = [];
 
-    for (const p of currentShiftPassengers) {
-      if (!p?.Employee_PhoneNumber || !p?.bufferEnd) continue;
+    for (const shift of asset.passengers) {
+      for (const sp of shift.passengers) {
+        const p = sp.passenger;
+        const bufferEnd = sp.bufferEnd;
 
-      const phoneClean = p.Employee_PhoneNumber.replace(/\D/g, "");
-      if (boardedSet.has(phoneClean)) continue;
+        if (!p || !bufferEnd) continue;
 
-      const bufferEndTime = new Date(p.bufferEnd);
-      if (isNaN(bufferEndTime.getTime())) {
-        console.warn(`⚠️ Skipping ${p.Employee_Name}: invalid bufferEnd value.`);
-        continue;
+        const phoneClean = p.Employee_PhoneNumber.replace(/\D/g, "");
+        if (boardedSet.has(phoneClean)) continue;
+
+        const bufferEndTime = new Date(bufferEnd);
+        if (isNaN(bufferEndTime.getTime())) {
+          console.warn(`⚠️ Skipping ${p.Employee_Name}: invalid bufferEnd value.`);
+          continue;
+        }
+
+        if (bufferEndTime.getTime() <= now.getTime()) {
+          console.log(`⏱️ Skipping ${p.Employee_Name}: bufferEnd time already passed.`);
+          continue;
+        }
+
+        const notify = await sendOtherPassengerSameShiftUpdateMessage(
+          p.Employee_PhoneNumber,
+          p.Employee_Name,
+          pickedPassenger.Employee_Name
+        );
+
+        notifiedPassengers.push({
+          name: p.Employee_Name,
+          phone: p.Employee_PhoneNumber,
+          success: notify.success,
+          error: notify.error || null,
+        });
       }
-
-      if (bufferEndTime.getTime() <= now.getTime()) {
-        console.log(`⏱️ Skipping ${p.Employee_Name}: bufferEnd time already passed.`);
-        continue;
-      }
-
-      const notify = await sendOtherPassengerSameShiftUpdateMessage(
-        p.Employee_PhoneNumber,
-        p.Employee_Name,
-        pickedPassenger.Employee_Name
-      );
-
-      notifiedPassengers.push({
-        name: p.Employee_Name,
-        phone: p.Employee_PhoneNumber,
-        success: notify.success,
-        error: notify.error || null,
-      });
     }
 
     return res.status(200).json({
@@ -416,6 +422,7 @@ export const sendPickupConfirmation = async (req, res) => {
       .json({ success: false, message: "Server error", error: err.message });
   }
 };
+
 
 
 
