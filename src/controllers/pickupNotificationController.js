@@ -748,7 +748,7 @@ export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
         console.log("ye hai bufferEndTime", bufferEndTime );
 
 
-        if (currentTime < bufferEndTime) {
+        if (currentTime > bufferEndTime) {
           console.log(
             `📨 bufferEnd still active — notifying other passengers...`
           );
