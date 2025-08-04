@@ -744,6 +744,9 @@ export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
         if (!Number.isFinite(bufferEndTime)) {
           throw new Error(`Invalid bufferEnd value: ${bufferEnd}`);
         }
+        console.log("ye hai current", currentTime );
+        console.log("ye hai bufferEndTime", bufferEndTime );
+
 
         if (currentTime < bufferEndTime) {
           console.log(
