@@ -102,8 +102,7 @@ export const sendPickupConfirmation = async (req, res) => {
       if (!p?.Employee_PhoneNumber) continue;
       const phoneClean = p.Employee_PhoneNumber.replace(/\D/g, "");
       if (boardedSet.has(phoneClean)) continue;
-
-      //sendOtherPassengerSameShiftUpdateMessage
+//sendOtherPassengerSameShiftUpdateMessage
       const notify = await sendPassengerUpdate(
         p.Employee_PhoneNumber,
         p.Employee_Name,
@@ -749,7 +748,7 @@ export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
         console.log("ye hai bufferEndTime", bufferEndTime );
 
 
-        if (currentTime > bufferEndTime) {
+        if (currentTime < bufferEndTime) {
           console.log(
             `📨 bufferEnd still active — notifying other passengers...`
           );
