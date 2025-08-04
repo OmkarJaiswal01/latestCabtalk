@@ -103,10 +103,11 @@ export const sendPickupConfirmation = async (req, res) => {
       const phoneClean = p.Employee_PhoneNumber.replace(/\D/g, "");
       if (boardedSet.has(phoneClean)) continue;
 
-      const notify = await sendOtherPassengerSameShiftUpdateMessage(
+      //sendOtherPassengerSameShiftUpdateMessage
+      const notify = await sendPassengerUpdate(
         p.Employee_PhoneNumber,
         p.Employee_Name,
-        pickedPassenger.Employee_Name
+        // pickedPassenger.Employee_Name
       );
       notifiedPassengers.push({
         name: p.Employee_Name,
