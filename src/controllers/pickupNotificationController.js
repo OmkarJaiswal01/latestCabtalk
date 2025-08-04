@@ -415,38 +415,52 @@ export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
         );
 
         if (shiftGroup) {
-          for (const shiftP of shiftGroup.passengers) {
-            const otherPassenger = shiftP.passenger;
 
-            if (
-              otherPassenger &&
-              otherPassenger._id?.toString() !== passenger._id?.toString()
-            ) {
-              try {
-                await sendPassengerUpdate(
-                  {
-                    body: {
-                      phoneNumber: otherPassenger.Employee_PhoneNumber,
-                      name: otherPassenger.Employee_Name, // Name of missed passenger
-                    },
-                  },
-                  {
-                    status: () => ({
-                      json: () => {},
-                    }),
-                  }
-                );
-                console.log(
-                  `📤 Notified ${otherPassenger.Employee_Name} that ${passenger.Employee_Name} missed the cab.`
-                );
-              } catch (err) {
-                console.error(
-                  `❌ Failed to notify ${otherPassenger.Employee_Name} about ${passenger.Employee_Name}:`,
-                  err.message
-                );
-              }
-            }
-          }
+
+         for (const shiftP of shiftGroup.passengers) {
+  const otherPassenger = shiftP.passenger;
+
+  if (
+    otherPassenger &&
+    otherPassenger._id?.toString() !== passenger._id?.toString()
+  ) {
+    const bufferEndTime = new Date(bufferEnd).getTime();
+    const currentTime = Date.now();
+
+    if (bufferEndTime <= currentTime) {
+      console.log(`⏩ Skipping ${otherPassenger.Employee_Name} — bufferEnd already passed.`);
+      continue;
+    }
+
+    try {
+      await sendPassengerUpdate(
+        {
+          body: {
+            phoneNumber: otherPassenger.Employee_PhoneNumber,
+            name: otherPassenger.Employee_Name,
+          },
+        },
+        {
+          status: () => ({
+            json: () => {},
+          }),
+        }
+      );
+
+      console.log(
+        `📤 Notified ${otherPassenger.Employee_Name} that ${passenger.Employee_Name} missed the cab.`
+      );
+    } catch (err) {
+      console.error(
+        `❌ Failed to notify ${otherPassenger.Employee_Name} about ${passenger.Employee_Name}:`,
+        err.message
+      );
+    }
+  }
+}
+
+
+
         } else {
           console.warn(`⚠️ Shift group not found for ${passenger.Employee_Name}`);
         }
@@ -476,6 +490,7 @@ function convertMillisecondsToTimeBufferEnd(ms) {
   const seconds = totalSeconds % 60;
   return { hours, minutes, seconds };
 }
+
 
 
 
