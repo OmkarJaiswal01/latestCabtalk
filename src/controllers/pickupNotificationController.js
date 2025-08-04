@@ -427,7 +427,7 @@ export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
                   {
                     body: {
                       phoneNumber: otherPassenger.Employee_PhoneNumber,
-                      name: passenger.Employee_Name, // Name of missed passenger
+                      name: otherPassenger.Employee_Name, // Name of missed passenger
                     },
                   },
                   {
