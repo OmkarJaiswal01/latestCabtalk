@@ -126,44 +126,44 @@ export const createJourney = async (req, res) => {
 
 
 //move update other passenger
-if (bufferEnd) {
-  const delay = new Date(bufferEnd).getTime() - Date.now();
+// if (bufferEnd) {
+//   const delay = new Date(bufferEnd).getTime() - Date.now();
 
-  console.log(`🕓 bufferEnd for ${passenger.Employee_Name}: ${new Date(bufferEnd).toLocaleString()}`);
-  console.log(`⏱️ Calculated delay for missed-cab message: ${delay}ms (${Math.round(delay / 1000)} seconds)`);
+//   console.log(`🕓 bufferEnd for ${passenger.Employee_Name}: ${new Date(bufferEnd).toLocaleString()}`);
+//   console.log(`⏱️ Calculated delay for missed-cab message: ${delay}ms (${Math.round(delay / 1000)} seconds)`);
 
-  if (delay > 0) {
-    console.log(`📅 Scheduling missed-cab message for ${passenger.Employee_Name}...`);
+//   if (delay > 0) {
+//     console.log(`📅 Scheduling missed-cab message for ${passenger.Employee_Name}...`);
 
-    setTimeout(async () => {
-      console.log(`🚨 [Triggered] Missed-cab check for ${passenger.Employee_Name} at ${new Date().toLocaleString()}`);
+//     setTimeout(async () => {
+//       console.log(`🚨 [Triggered] Missed-cab check for ${passenger.Employee_Name} at ${new Date().toLocaleString()}`);
 
-      try {
-        await sendPassengerUpdate(
-          {
-            body: {
-              phoneNumber: passenger.Employee_PhoneNumber,
-              name: passenger.Employee_Name,
-            },
-          },
-          {
-            status: () => ({
-              json: () => {},
-            }),
-          }
-        );
+//       try {
+//         await sendPassengerUpdate(
+//           {
+//             body: {
+//               phoneNumber: passenger.Employee_PhoneNumber,
+//               name: passenger.Employee_Name,
+//             },
+//           },
+//           {
+//             status: () => ({
+//               json: () => {},
+//             }),
+//           }
+//         );
 
-        console.log(`✅ [Success] Missed-cab WhatsApp message sent for ${passenger.Employee_Name}`);
-      } catch (err) {
-        console.error(`❌ [Error] Failed to send missed-cab update for ${passenger.Employee_Name}:`, err.message);
-      }
-    }, delay);
+//         console.log(`✅ [Success] Missed-cab WhatsApp message sent for ${passenger.Employee_Name}`);
+//       } catch (err) {
+//         console.error(`❌ [Error] Failed to send missed-cab update for ${passenger.Employee_Name}:`, err.message);
+//       }
+//     }, delay);
 
-    console.log(`⏳ [Scheduled] Missed-cab message will be sent in ${Math.round(delay / 1000)} seconds for ${passenger.Employee_Name}`);
-  } else {
-    console.warn(`⚠️ bufferEnd is in the past for ${passenger.Employee_Name}. Skipping missed-cab scheduling.`);
-  }
-}
+//     console.log(`⏳ [Scheduled] Missed-cab message will be sent in ${Math.round(delay / 1000)} seconds for ${passenger.Employee_Name}`);
+//   } else {
+//     console.warn(`⚠️ bufferEnd is in the past for ${passenger.Employee_Name}. Skipping missed-cab scheduling.`);
+//   }
+// }
 
         }
 
