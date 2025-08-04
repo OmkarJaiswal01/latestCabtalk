@@ -6,7 +6,7 @@ import { sendOtherPassengerSameShiftUpdateMessage } from "../utils/InformOtherPa
 import {sendPickupTemplateBefore10Min} from "../utils/sendTempleteBeforeTenMinites.js"
 import {sendTemplateMoveCab} from "../utils/sendTemplateMoveCab.js"
 import {sendWhatsAppMessage} from "../utils/whatsappHelper.js"
-
+import { updateOtherPassenger } from "../utils/UpdateOtherPassenger.js";
 
 
 
@@ -334,3 +334,24 @@ function convertMillisecondsToTimeBufferEnd(ms) {
 
 
 
+
+//update other passener wehn cab has moved
+
+
+
+
+export const sendPassengerUpdate = async (req, res) => {
+  const { phoneNumber, name } = req.body;
+
+  if (!phoneNumber || !name) {
+    return res.status(400).json({ error: 'phoneNumber and name are required' });
+  }
+
+  try {
+    const result = await updateOtherPassenger(phoneNumber, name);
+    return res.status(200).json({ message: 'Message sent successfully', result });
+  } catch (error) {
+    console.error('Controller Error:', error.message);
+    return res.status(500).json({ error: 'Failed to send message' });
+  }
+};
