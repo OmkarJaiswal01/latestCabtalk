@@ -188,7 +188,8 @@ export const createJourney = async (req, res) => {
         console.log("✅ Assigned passengers notified");
 
         console.log("📨 Notifying other passengers in same shift...");
-        await sendOtherPassengerSameShiftUpdateMessage(Journey_shift, asset._id);
+        //sendOtherPassengerSameShiftUpdateMessage
+        await sendPassengerUpdate(Journey_shift, asset._id);
       } catch (err) {
         console.error("🚨 Error during passenger notifications:", err.message);
       }
@@ -431,7 +432,8 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
         }
 
         console.log(`🔔 [Step 13] Notifying ${pDoc.Employee_Name} about ${passenger.Employee_Name} boarding...`);
-        await sendOtherPassengerSameShiftUpdateMessage(
+        //sendOtherPassengerSameShiftUpdateMessage
+        await sendPassengerUpdate(
           pDoc.Employee_PhoneNumber,
           pDoc.Employee_Name,
           passenger.Employee_Name
