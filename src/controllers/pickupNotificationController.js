@@ -3,33 +3,27 @@ import Driver from "../models/driverModel.js";
 import Journey from "../models/JourneyModel.js";
 import { sendPickupConfirmationMessage } from "../utils/PickUpPassengerSendTem.js";
 import { sendOtherPassengerSameShiftUpdateMessage } from "../utils/InformOtherPassenger.js";
-import {sendPickupTemplateBefore10Min} from "../utils/sendTempleteBeforeTenMinites.js"
-import {sendTemplateMoveCab} from "../utils/sendTemplateMoveCab.js"
-import {sendWhatsAppMessage} from "../utils/whatsappHelper.js"
+import { sendPickupTemplateBefore10Min } from "../utils/sendTempleteBeforeTenMinites.js";
+import { sendTemplateMoveCab } from "../utils/sendTemplateMoveCab.js";
+import { sendWhatsAppMessage } from "../utils/whatsappHelper.js";
 import { updateOtherPassenger } from "../utils/UpdateOtherPassenger.js";
-
-
 
 export const sendPickupConfirmation = async (req, res) => {
   try {
     const { pickedPassengerPhoneNumber } = req.body;
     if (!pickedPassengerPhoneNumber) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "pickedPassengerPhoneNumber is required.",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "pickedPassengerPhoneNumber is required.",
+      });
     }
 
     const cleanedPhone = pickedPassengerPhoneNumber.replace(/\D/g, "");
     if (!/^91\d{10}$/.test(cleanedPhone)) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "Invalid Indian phone number format.",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "Invalid Indian phone number format.",
+      });
     }
 
     const asset = await Asset.findOne({
@@ -59,12 +53,10 @@ export const sendPickupConfirmation = async (req, res) => {
       }
     }
     if (!pickedPassenger) {
-      return res
-        .status(404)
-        .json({
-          success: false,
-          message: "Picked passenger not found in asset.",
-        });
+      return res.status(404).json({
+        success: false,
+        message: "Picked passenger not found in asset.",
+      });
     }
 
     const journey = await Journey.findOne({ Asset: asset._id })
@@ -144,8 +136,7 @@ export const sendPickupConfirmation = async (req, res) => {
   }
 };
 
-
-// send templete 
+// send templete
 
 export const schedulePickupNotification = async (passenger, bufferStart) => {
   console.log("📦 Scheduling pickup notification...");
@@ -153,13 +144,22 @@ export const schedulePickupNotification = async (passenger, bufferStart) => {
   const phoneNumber = passenger?.Employee_PhoneNumber;
   const name = passenger?.Employee_Name;
 
-  if (!phoneNumber || !name || !bufferStart || isNaN(new Date(bufferStart).getTime())) {
-    console.warn(`❌ Invalid passenger data. name=${name}, phone=${phoneNumber}, bufferStart=${bufferStart}`);
+  if (
+    !phoneNumber ||
+    !name ||
+    !bufferStart ||
+    isNaN(new Date(bufferStart).getTime())
+  ) {
+    console.warn(
+      `❌ Invalid passenger data. name=${name}, phone=${phoneNumber}, bufferStart=${bufferStart}`
+    );
     return;
   }
 
-  const templateName = 'pick_up_passenger_notification_before_10_minutes__';
-  const broadcastName = `pick_up_passenger_notification_before_10_minutes___${formatBroadcastName(bufferStart)}`;
+  const templateName = "pick_up_passenger_notification_before_10_minutes__";
+  const broadcastName = `pick_up_passenger_notification_before_10_minutes___${formatBroadcastName(
+    bufferStart
+  )}`;
 
   const pickupDate = new Date(bufferStart);
   const sendTime = new Date(pickupDate.getTime() - 10 * 60 * 1000); // 10 minutes before
@@ -173,34 +173,54 @@ export const schedulePickupNotification = async (passenger, bufferStart) => {
   console.log(`⏳ Delay: ${delay} ms (${hours}h ${minutes}m ${seconds}s)`);
 
   if (delay <= 0) {
-    console.log("⚠️ Pickup is too close or in the past. Sending notification immediately.");
+    console.log(
+      "⚠️ Pickup is too close or in the past. Sending notification immediately."
+    );
     try {
-      await sendPickupTemplateBefore10Min(phoneNumber, name, templateName, broadcastName);
+      await sendPickupTemplateBefore10Min(
+        phoneNumber,
+        name,
+        templateName,
+        broadcastName
+      );
       console.log(`✅ Immediate notification sent to ${name} (${phoneNumber})`);
     } catch (err) {
-      console.error(`❌ Failed to send immediate notification to ${name}:`, err);
+      console.error(
+        `❌ Failed to send immediate notification to ${name}:`,
+        err
+      );
     }
     return;
   }
 
   setTimeout(async () => {
     try {
-      console.log(`🚀 Sending scheduled notification to ${name} at ${new Date().toISOString()}`);
-      await sendPickupTemplateBefore10Min(phoneNumber, name, templateName, broadcastName);
+      console.log(
+        `🚀 Sending scheduled notification to ${name} at ${new Date().toISOString()}`
+      );
+      await sendPickupTemplateBefore10Min(
+        phoneNumber,
+        name,
+        templateName,
+        broadcastName
+      );
       console.log(`✅ Scheduled notification sent to ${name} (${phoneNumber})`);
     } catch (err) {
-      console.error(`❌ Failed to send scheduled pickup message to ${name}:`, err);
+      console.error(
+        `❌ Failed to send scheduled pickup message to ${name}:`,
+        err
+      );
     }
   }, delay);
 };
 
 function formatBroadcastName(pickupTime) {
   const dt = new Date(pickupTime);
-  const day = String(dt.getDate()).padStart(2, '0');
-  const month = String(dt.getMonth() + 1).padStart(2, '0');
+  const day = String(dt.getDate()).padStart(2, "0");
+  const month = String(dt.getMonth() + 1).padStart(2, "0");
   const year = dt.getFullYear();
-  const hour = String(dt.getHours()).padStart(2, '0');
-  const min = String(dt.getMinutes()).padStart(2, '0');
+  const hour = String(dt.getHours()).padStart(2, "0");
+  const min = String(dt.getMinutes()).padStart(2, "0");
   return `${day}${month}${year}${hour}${min}`;
 }
 
@@ -212,13 +232,7 @@ function convertMillisecondsToTime(ms) {
   return { hours, minutes, seconds };
 }
 
-
-
-
-
 // send template on buffer End time
-
-
 
 // export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
 //   console.log("📦 [Step 0] Scheduling bufferEnd notification...");
@@ -323,7 +337,6 @@ function convertMillisecondsToTime(ms) {
 //   }
 // };
 
-
 //correct
 // export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
 //   console.log("📦 [Step 0] Scheduling bufferEnd notification...");
@@ -418,7 +431,6 @@ function convertMillisecondsToTime(ms) {
 
 //         if (shiftGroup) {
 
-          
 //           for (const shiftP of shiftGroup.passengers) {
 //             const otherPassenger = shiftP.passenger;
 
@@ -452,7 +464,6 @@ function convertMillisecondsToTime(ms) {
 //             }
 //           }
 
-
 //         } else {
 //           console.warn(`⚠️ Shift group not found for ${passenger.Employee_Name}`);
 //         }
@@ -473,7 +484,6 @@ function convertMillisecondsToTime(ms) {
 //     setTimeout(sendIfStillNotBoarded, delay);
 //   }
 // };
-
 
 //correct 2
 // export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
@@ -622,7 +632,6 @@ function convertMillisecondsToTime(ms) {
 //   }
 // };
 
-
 // 🔧 Utility to convert milliseconds to human-readable time
 
 export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
@@ -632,8 +641,15 @@ export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
   const name = passenger?.Employee_Name;
 
   // ✅ Step 1: Validate inputs
-  if (!phoneNumber || !name || !bufferEnd || isNaN(new Date(bufferEnd).getTime())) {
-    console.warn(`❌ Invalid input. name=${name}, phone=${phoneNumber}, bufferEnd=${bufferEnd}`);
+  if (
+    !phoneNumber ||
+    !name ||
+    !bufferEnd ||
+    isNaN(new Date(bufferEnd).getTime())
+  ) {
+    console.warn(
+      `❌ Invalid input. name=${name}, phone=${phoneNumber}, bufferEnd=${bufferEnd}`
+    );
     return;
   }
 
@@ -643,7 +659,9 @@ export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
 
   const { hours, minutes, seconds } = convertMillisecondsToTimeBufferEnd(delay);
   console.log(`📅 bufferEnd for ${name}: ${sendTime.toISOString()}`);
-  console.log(`⏳ Notification in: ${hours}h ${minutes}m ${seconds}s (${delay}ms)`);
+  console.log(
+    `⏳ Notification in: ${hours}h ${minutes}m ${seconds}s (${delay}ms)`
+  );
 
   // 🔄 Step 2: Function to run at bufferEnd
   const sendIfStillNotBoarded = async () => {
@@ -675,8 +693,8 @@ export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
       console.log("🚗 Driver phone number:", driverPhoneNumber);
 
       const passengerAssigned = journey?.Asset?.passengers?.some((shift) =>
-        shift.passengers.some((p) =>
-          p.passenger?._id?.toString() === passenger._id?.toString()
+        shift.passengers.some(
+          (p) => p.passenger?._id?.toString() === passenger._id?.toString()
         )
       );
 
@@ -685,8 +703,8 @@ export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
         return;
       }
 
-      const hasBoarded = journey.boardedPassengers?.some(bp =>
-        bp.passenger?._id?.toString() === passenger._id?.toString()
+      const hasBoarded = journey.boardedPassengers?.some(
+        (bp) => bp.passenger?._id?.toString() === passenger._id?.toString()
       );
 
       if (!hasBoarded) {
@@ -698,27 +716,43 @@ export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
 
         // Step 2: Notify driver
         if (!driverPhoneNumber || driverPhoneNumber.length < 10) {
-          console.warn(`⚠️ Driver phone number invalid or missing: ${driverPhoneNumber}`);
+          console.warn(
+            `⚠️ Driver phone number invalid or missing: ${driverPhoneNumber}`
+          );
         } else {
           try {
-            const message = "⚠️ The passenger is late. You can move the cab now.";
+            const message =
+              "⚠️ The passenger is late. You can move the cab now.";
             await sendWhatsAppMessage(driverPhoneNumber, message);
             console.log(`✅ Driver notified at ${driverPhoneNumber}`);
           } catch (err) {
-            console.error("❌ Failed to send message to driver:", err.response?.data || err.message);
+            console.error(
+              "❌ Failed to send message to driver:",
+              err.response?.data || err.message
+            );
           }
         }
 
         // ✅ Step 3: Notify other passengers ONLY if bufferEnd is NOT yet finished
         const currentTime = Date.now();
-        const bufferEndTime = new Date(bufferEnd).getTime();
+        // const bufferEndTime = new Date(bufferEnd).getTime();
+        const bufferEndTime =
+          bufferEnd instanceof Date
+            ? bufferEnd.getTime()
+            : new Date(bufferEnd).getTime();
+
+        if (!Number.isFinite(bufferEndTime)) {
+          throw new Error(`Invalid bufferEnd value: ${bufferEnd}`);
+        }
 
         if (currentTime < bufferEndTime) {
-          console.log(`📨 bufferEnd still active — notifying other passengers...`);
+          console.log(
+            `📨 bufferEnd still active — notifying other passengers...`
+          );
 
           const shiftGroup = journey.Asset?.passengers?.find((shift) =>
-            shift.passengers.some((p) =>
-              p.passenger?._id?.toString() === passenger._id?.toString()
+            shift.passengers.some(
+              (p) => p.passenger?._id?.toString() === passenger._id?.toString()
             )
           );
 
@@ -757,13 +791,19 @@ export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
               }
             }
           } else {
-            console.warn(`⚠️ Shift group not found for ${passenger.Employee_Name}`);
+            console.warn(
+              `⚠️ Shift group not found for ${passenger.Employee_Name}`
+            );
           }
         } else {
-          console.log(`⏩ Skipping notification to other passengers — bufferEnd has passed.`);
+          console.log(
+            `⏩ Skipping notification to other passengers — bufferEnd has passed.`
+          );
         }
       } else {
-        console.log(`🛑 Passenger ${name} already boarded. No reminder needed.`);
+        console.log(
+          `🛑 Passenger ${name} already boarded. No reminder needed.`
+        );
       }
     } catch (err) {
       console.error(`❌ Error checking boarding for ${name}:`, err.message);
@@ -780,10 +820,6 @@ export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
   }
 };
 
-
-
-
-
 // 🔧 Utility to convert milliseconds to human-readable time
 function convertMillisecondsToTimeBufferEnd(ms) {
   const totalSeconds = Math.floor(ms / 1000);
@@ -793,27 +829,22 @@ function convertMillisecondsToTimeBufferEnd(ms) {
   return { hours, minutes, seconds };
 }
 
-
-
-
-
 //update other passener wehn cab has moved
-
-
-
 
 export const sendPassengerUpdate = async (req, res) => {
   const { phoneNumber, name } = req.body;
 
   if (!phoneNumber || !name) {
-    return res.status(400).json({ error: 'phoneNumber and name are required' });
+    return res.status(400).json({ error: "phoneNumber and name are required" });
   }
 
   try {
     const result = await updateOtherPassenger(phoneNumber, name);
-    return res.status(200).json({ message: 'Message sent successfully', result });
+    return res
+      .status(200)
+      .json({ message: "Message sent successfully", result });
   } catch (error) {
-    console.error('Controller Error:', error.message);
-    return res.status(500).json({ error: 'Failed to send message' });
+    console.error("Controller Error:", error.message);
+    return res.status(500).json({ error: "Failed to send message" });
   }
 };
