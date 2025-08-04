@@ -123,10 +123,10 @@ export const createJourney = async (req, res) => {
               console.error(`❌ Failed to schedule bufferEnd check for ${passenger.Employee_Name}:`, err.message);
             }
           }
-        }
 
 
-       if (bufferEnd) {
+//move update other passenger
+if (bufferEnd) {
   const delay = new Date(bufferEnd).getTime() - Date.now();
 
   console.log(`🕓 bufferEnd for ${passenger.Employee_Name}: ${new Date(bufferEnd).toLocaleString()}`);
@@ -164,6 +164,11 @@ export const createJourney = async (req, res) => {
     console.warn(`⚠️ bufferEnd is in the past for ${passenger.Employee_Name}. Skipping missed-cab scheduling.`);
   }
 }
+
+        }
+
+
+       
 
 
       }
