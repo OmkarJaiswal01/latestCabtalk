@@ -558,56 +558,49 @@ export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
           }
         }
 
-        // ✅ Step 3: Notify other passengers ONLY if bufferEnd is still in the future
-        const bufferEndTime = new Date(bufferEnd).getTime();
-        const currentTime = Date.now();
+        // ✅ Step 3: Notify other passengers in the same shift
+        const shiftGroup = journey.Asset?.passengers?.find((shift) =>
+          shift.passengers.some((p) =>
+            p.passenger?._id?.toString() === passenger._id?.toString()
+          )
+        );
 
-        if (bufferEndTime <= currentTime) {
-          console.log(`⏩ Skipping shift notifications — bufferEnd already passed.`);
-        } else {
-          const shiftGroup = journey.Asset?.passengers?.find((shift) =>
-            shift.passengers.some((p) =>
-              p.passenger?._id?.toString() === passenger._id?.toString()
-            )
-          );
+        if (shiftGroup) {
+          for (const shiftP of shiftGroup.passengers) {
+            const otherPassenger = shiftP.passenger;
 
-          if (shiftGroup) {
-            for (const shiftP of shiftGroup.passengers) {
-              const otherPassenger = shiftP.passenger;
-
-              if (
-                otherPassenger &&
-                otherPassenger._id?.toString() !== passenger._id?.toString()
-              ) {
-                try {
-                  await sendPassengerUpdate(
-                    {
-                      body: {
-                        phoneNumber: otherPassenger.Employee_PhoneNumber,
-                        name: otherPassenger.Employee_Name,
-                      },
+            if (
+              otherPassenger &&
+              otherPassenger._id?.toString() !== passenger._id?.toString()
+            ) {
+              try {
+                await sendPassengerUpdate(
+                  {
+                    body: {
+                      phoneNumber: otherPassenger.Employee_PhoneNumber,
+                      name: otherPassenger.Employee_Name,
                     },
-                    {
-                      status: () => ({
-                        json: () => {},
-                      }),
-                    }
-                  );
+                  },
+                  {
+                    status: () => ({
+                      json: () => {},
+                    }),
+                  }
+                );
 
-                  console.log(
-                    `📤 Notified ${otherPassenger.Employee_Name} that ${passenger.Employee_Name} missed the cab.`
-                  );
-                } catch (err) {
-                  console.error(
-                    `❌ Failed to notify ${otherPassenger.Employee_Name} about ${passenger.Employee_Name}:`,
-                    err.message
-                  );
-                }
+                console.log(
+                  `📤 Notified ${otherPassenger.Employee_Name} that ${passenger.Employee_Name} missed the cab.`
+                );
+              } catch (err) {
+                console.error(
+                  `❌ Failed to notify ${otherPassenger.Employee_Name} about ${passenger.Employee_Name}:`,
+                  err.message
+                );
               }
             }
-          } else {
-            console.warn(`⚠️ Shift group not found for ${passenger.Employee_Name}`);
           }
+        } else {
+          console.warn(`⚠️ Shift group not found for ${passenger.Employee_Name}`);
         }
       } else {
         console.log(`🛑 Passenger ${name} already boarded. No reminder needed.`);
@@ -626,6 +619,7 @@ export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
     setTimeout(sendIfStillNotBoarded, delay);
   }
 };
+
 
 // 🔧 Utility to convert milliseconds to human-readable time
 
