@@ -323,6 +323,157 @@ function convertMillisecondsToTime(ms) {
 //   }
 // };
 
+
+//correct
+// export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
+//   console.log("📦 [Step 0] Scheduling bufferEnd notification...");
+
+//   const phoneNumber = passenger?.Employee_PhoneNumber;
+//   const name = passenger?.Employee_Name;
+
+//   // ✅ Step 1: Validate inputs
+//   if (!phoneNumber || !name || !bufferEnd || isNaN(new Date(bufferEnd).getTime())) {
+//     console.warn(`❌ Invalid input. name=${name}, phone=${phoneNumber}, bufferEnd=${bufferEnd}`);
+//     return;
+//   }
+
+//   const now = new Date();
+//   const sendTime = new Date(bufferEnd);
+//   const delay = sendTime.getTime() - now.getTime();
+
+//   const { hours, minutes, seconds } = convertMillisecondsToTimeBufferEnd(delay);
+//   console.log(`📅 bufferEnd for ${name}: ${sendTime.toISOString()}`);
+//   console.log(`⏳ Notification in: ${hours}h ${minutes}m ${seconds}s (${delay}ms)`);
+
+//   // 🔄 Step 2: Function to run at bufferEnd
+//   const sendIfStillNotBoarded = async () => {
+//     try {
+//       console.log(`🔍 Checking if ${name} (${phoneNumber}) has boarded...`);
+
+//       const journey = await Journey.findOne({
+//         Journey_Type: { $regex: /^pickup$/, $options: "i" },
+//       })
+//         .sort({ createdAt: -1 })
+//         .populate("Driver", "phoneNumber")
+//         .populate({
+//           path: "Asset",
+//           select: "passengers",
+//           populate: {
+//             path: "passengers.passengers.passenger",
+//             model: "Passenger",
+//             select: "Employee_Name Employee_PhoneNumber",
+//           },
+//         })
+//         .populate("boardedPassengers.passenger", "Employee_PhoneNumber");
+
+//       if (!journey) {
+//         console.warn(`❌ No journey found.`);
+//         return;
+//       }
+
+//       const driverPhoneNumber = journey?.Driver?.phoneNumber;
+//       console.log("🚗 Driver phone number:", driverPhoneNumber);
+
+//       const passengerAssigned = journey?.Asset?.passengers?.some((shift) =>
+//         shift.passengers.some((p) =>
+//           p.passenger?._id?.toString() === passenger._id?.toString()
+//         )
+//       );
+
+//       if (!passengerAssigned) {
+//         console.warn(`❌ Passenger not assigned to journey asset.`);
+//         return;
+//       }
+
+//       const hasBoarded = journey.boardedPassengers?.some(bp =>
+//         bp.passenger?._id?.toString() === passenger._id?.toString()
+//       );
+
+//       if (!hasBoarded) {
+//         console.log(`📨 Passenger ${name} NOT boarded. Sending messages...`);
+
+//         // Step 1: Notify passenger
+//         await sendTemplateMoveCab(phoneNumber, name);
+//         console.log(`✅ Passenger message sent to ${phoneNumber}`);
+
+//         // Step 2: Notify driver
+//         if (!driverPhoneNumber || driverPhoneNumber.length < 10) {
+//           console.warn(`⚠️ Driver phone number invalid or missing: ${driverPhoneNumber}`);
+//         } else {
+//           try {
+//             const message = "⚠️ The passenger is late. You can move the cab now.";
+//             await sendWhatsAppMessage(driverPhoneNumber, message);
+//             console.log(`✅ Driver notified at ${driverPhoneNumber}`);
+//           } catch (err) {
+//             console.error("❌ Failed to send message to driver:", err.response?.data || err.message);
+//           }
+//         }
+
+//         // ✅ Step 3: Notify other passengers in the same shift
+//         const shiftGroup = journey.Asset?.passengers?.find((shift) =>
+//           shift.passengers.some((p) =>
+//             p.passenger?._id?.toString() === passenger._id?.toString()
+//           )
+//         );
+
+//         if (shiftGroup) {
+
+          
+//           for (const shiftP of shiftGroup.passengers) {
+//             const otherPassenger = shiftP.passenger;
+
+//             if (
+//               otherPassenger &&
+//               otherPassenger._id?.toString() !== passenger._id?.toString()
+//             ) {
+//               try {
+//                 await sendPassengerUpdate(
+//                   {
+//                     body: {
+//                       phoneNumber: otherPassenger.Employee_PhoneNumber,
+//                       name: otherPassenger.Employee_Name, // Name of missed passenger
+//                     },
+//                   },
+//                   {
+//                     status: () => ({
+//                       json: () => {},
+//                     }),
+//                   }
+//                 );
+//                 console.log(
+//                   `📤 Notified ${otherPassenger.Employee_Name} that ${passenger.Employee_Name} missed the cab.`
+//                 );
+//               } catch (err) {
+//                 console.error(
+//                   `❌ Failed to notify ${otherPassenger.Employee_Name} about ${passenger.Employee_Name}:`,
+//                   err.message
+//                 );
+//               }
+//             }
+//           }
+
+
+//         } else {
+//           console.warn(`⚠️ Shift group not found for ${passenger.Employee_Name}`);
+//         }
+//       } else {
+//         console.log(`🛑 Passenger ${name} already boarded. No reminder needed.`);
+//       }
+//     } catch (err) {
+//       console.error(`❌ Error checking boarding for ${name}:`, err.message);
+//     }
+//   };
+
+//   // ⏲️ Step 3: Schedule or send immediately
+//   if (delay <= 0) {
+//     console.log("⚠️ bufferEnd already passed. Sending check immediately.");
+//     await sendIfStillNotBoarded();
+//   } else {
+//     console.log(`⏳ Scheduling check in ${delay / 1000}s`);
+//     setTimeout(sendIfStillNotBoarded, delay);
+//   }
+// };
+
 export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
   console.log("📦 [Step 0] Scheduling bufferEnd notification...");
 
@@ -407,62 +558,56 @@ export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
           }
         }
 
-        // ✅ Step 3: Notify other passengers in the same shift
-        const shiftGroup = journey.Asset?.passengers?.find((shift) =>
-          shift.passengers.some((p) =>
-            p.passenger?._id?.toString() === passenger._id?.toString()
-          )
-        );
+        // ✅ Step 3: Notify other passengers ONLY if bufferEnd is still in the future
+        const bufferEndTime = new Date(bufferEnd).getTime();
+        const currentTime = Date.now();
 
-        if (shiftGroup) {
-
-
-         for (const shiftP of shiftGroup.passengers) {
-  const otherPassenger = shiftP.passenger;
-
-  if (
-    otherPassenger &&
-    otherPassenger._id?.toString() !== passenger._id?.toString()
-  ) {
-    const bufferEndTime = new Date(bufferEnd).getTime();
-    const currentTime = Date.now();
-
-    if (bufferEndTime <= currentTime) {
-      console.log(`⏩ Skipping ${otherPassenger.Employee_Name} — bufferEnd already passed.`);
-      continue;
-    }
-
-    try {
-      await sendPassengerUpdate(
-        {
-          body: {
-            phoneNumber: otherPassenger.Employee_PhoneNumber,
-            name: otherPassenger.Employee_Name,
-          },
-        },
-        {
-          status: () => ({
-            json: () => {},
-          }),
-        }
-      );
-
-      console.log(
-        `📤 Notified ${otherPassenger.Employee_Name} that ${passenger.Employee_Name} missed the cab.`
-      );
-    } catch (err) {
-      console.error(
-        `❌ Failed to notify ${otherPassenger.Employee_Name} about ${passenger.Employee_Name}:`,
-        err.message
-      );
-    }
-  }
-}
-
-
-
+        if (bufferEndTime <= currentTime) {
+          console.log(`⏩ Skipping shift notifications — bufferEnd already passed.`);
         } else {
-          console.warn(`⚠️ Shift group not found for ${passenger.Employee_Name}`);
+          const shiftGroup = journey.Asset?.passengers?.find((shift) =>
+            shift.passengers.some((p) =>
+              p.passenger?._id?.toString() === passenger._id?.toString()
+            )
+          );
+
+          if (shiftGroup) {
+            for (const shiftP of shiftGroup.passengers) {
+              const otherPassenger = shiftP.passenger;
+
+              if (
+                otherPassenger &&
+                otherPassenger._id?.toString() !== passenger._id?.toString()
+              ) {
+                try {
+                  await sendPassengerUpdate(
+                    {
+                      body: {
+                        phoneNumber: otherPassenger.Employee_PhoneNumber,
+                        name: otherPassenger.Employee_Name,
+                      },
+                    },
+                    {
+                      status: () => ({
+                        json: () => {},
+                      }),
+                    }
+                  );
+
+                  console.log(
+                    `📤 Notified ${otherPassenger.Employee_Name} that ${passenger.Employee_Name} missed the cab.`
+                  );
+                } catch (err) {
+                  console.error(
+                    `❌ Failed to notify ${otherPassenger.Employee_Name} about ${passenger.Employee_Name}:`,
+                    err.message
+                  );
+                }
+              }
+            }
+          } else {
+            console.warn(`⚠️ Shift group not found for ${passenger.Employee_Name}`);
+          }
         }
       } else {
         console.log(`🛑 Passenger ${name} already boarded. No reminder needed.`);
@@ -481,6 +626,13 @@ export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
     setTimeout(sendIfStillNotBoarded, delay);
   }
 };
+
+// 🔧 Utility to convert milliseconds to human-readable time
+
+
+
+
+
 
 // 🔧 Utility to convert milliseconds to human-readable time
 function convertMillisecondsToTimeBufferEnd(ms) {
