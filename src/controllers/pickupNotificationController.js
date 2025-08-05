@@ -992,6 +992,49 @@ export const sendPickupConfirmation = async (req, res) => {
   }
 };
  
+// export const schedulePickupNotification = async (passenger, bufferStart) => {
+//   const phoneNumber = passenger?.Employee_PhoneNumber;
+//   const name = passenger?.Employee_Name;
+ 
+//   if (
+//     !phoneNumber ||
+//     !name ||
+//     !bufferStart ||
+//     isNaN(new Date(bufferStart).getTime())
+//   ) {
+//     return;
+//   }
+ 
+//   const templateName = "pick_up_passenger_notification_before_10_minutes__";
+//   const broadcastName = `pick_up_passenger_notification_before_10_minutes___${formatBroadcastName(
+//     bufferStart
+//   )}`;
+ 
+//   const pickupDate = new Date(bufferStart);
+//   const sendTime = new Date(pickupDate.getTime() - 10 * 60 * 1000);
+//   const delay = sendTime.getTime() - Date.now();
+ 
+//   if (delay <= 0) {
+//     await sendPickupTemplateBefore10Min(
+//       phoneNumber,
+//       name,
+//       templateName,
+//       broadcastName
+//     );
+//     return;
+//   }
+ 
+//   setTimeout(async () => {
+//     await sendPickupTemplateBefore10Min(
+//       phoneNumber,
+//       name,
+//       templateName,
+//       broadcastName
+//     );
+//   }, delay);
+// };
+ 
+
 export const schedulePickupNotification = async (passenger, bufferStart) => {
   const phoneNumber = passenger?.Employee_PhoneNumber;
   const name = passenger?.Employee_Name;
@@ -1012,26 +1055,21 @@ export const schedulePickupNotification = async (passenger, bufferStart) => {
  
   const pickupDate = new Date(bufferStart);
   const sendTime = new Date(pickupDate.getTime() - 10 * 60 * 1000);
-  const delay = sendTime.getTime() - Date.now();
+  const scheduledAt = sendTime.toISOString();
  
-  if (delay <= 0) {
-    await sendPickupTemplateBefore10Min(
+  try {
+    const result = await sendPickupTemplateBefore10Min(
       phoneNumber,
       name,
       templateName,
-      broadcastName
+      broadcastName,
+      scheduledAt
     );
-    return;
+    return result;
+  } catch (err) {
+    console.error("Failed to schedule pickup notification:", err);
+    throw err;
   }
- 
-  setTimeout(async () => {
-    await sendPickupTemplateBefore10Min(
-      phoneNumber,
-      name,
-      templateName,
-      broadcastName
-    );
-  }, delay);
 };
  
 function formatBroadcastName(pickupTime) {
@@ -1043,6 +1081,8 @@ function formatBroadcastName(pickupTime) {
   const min = String(dt.getMinutes()).padStart(2, "0");
   return `${day}${month}${year}${hour}${min}`;
 }
+
+
  
 export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
   const phoneNumber = passenger?.Employee_PhoneNumber;

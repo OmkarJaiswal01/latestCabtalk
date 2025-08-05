@@ -478,6 +478,112 @@ import { startRideUpdatePassengerController } from "../utils/rideStartUpdatePass
 import { schedulePickupNotification } from "../controllers/pickupNotificationController.js";
 import { scheduleBufferEndNotification } from "../controllers/pickupNotificationController.js";
  
+// export const createJourney = async (req, res) => {
+//   try {
+//     const { Journey_Type, vehicleNumber, Journey_shift } = req.body;
+//     if (!Journey_Type || !vehicleNumber || !Journey_shift) {
+//       return res.status(400).json({
+//         message: "Journey_Type, vehicleNumber and Journey_shift are required.",
+//       });
+//     }
+//     const driver = await Driver.findOne({ vehicleNumber });
+ 
+//     if (!driver) {
+//       return res.status(404).json({
+//         message: "No driver found with this vehicle number.",
+//       });
+//     }
+//     const asset = await Asset.findOne({ driver: driver._id }).populate({
+//       path: "passengers.passengers.passenger",
+//       model: "Passenger",
+//       select: "Employee_ID Employee_Name Employee_PhoneNumber",
+//     });
+ 
+//     if (!asset) {
+//       return res.status(404).json({
+//         message: "No assigned vehicle found for this driver.",
+//       });
+//     }
+//     const existingJourney = await Journey.findOne({ Driver: driver._id });
+ 
+//     if (existingJourney) {
+//       await sendWhatsAppMessage(
+//         driver.phoneNumber,
+//         "Please end this current ride before starting a new one."
+//       );
+//       return res.status(400).json({
+//         message:
+//           "Active journey exists. Please end the current ride before starting a new one.",
+//       });
+//     }
+//     const newJourney = new Journey({
+//       Driver: driver._id,
+//       Asset: asset._id,
+//       Journey_Type,
+//       Journey_shift,
+//       Occupancy: 0,
+//       SOS_Status: false,
+//     });
+ 
+//     await newJourney.save();
+//     asset.isActive = true;
+//     await asset.save();
+//     if (Journey_Type.toLowerCase() === "pickup") {
+//       for (const shift of asset.passengers) {
+//         if (shift.shift !== Journey_shift) continue;
+ 
+//         for (const shiftPassenger of shift.passengers) {
+//           const { passenger, bufferStart, bufferEnd } = shiftPassenger;
+ 
+//           if (!passenger) continue;
+//           if (bufferStart) {
+//             try {
+//               await schedulePickupNotification(passenger, bufferStart);
+//             } catch (err) {}
+//           }
+//           if (bufferEnd) {
+//             try {
+//               await scheduleBufferEndNotification(passenger, bufferEnd);
+//             } catch (err) {}
+//           }
+//         }
+//       }
+//       try {
+//         const mockReq = {
+//           body: { vehicleNumber, Journey_shift },
+//         };
+//         const mockRes = {
+//           status: (code) => ({
+//             json: (data) => {},
+//           }),
+//         };
+//         await startRideUpdatePassengerController(mockReq, mockRes);
+//         // await sendOtherPassengerSameShiftUpdateMessage(
+//         //   Journey_shift,
+//         //   asset._id
+//         // );
+//       } catch (err) {}
+//     } else {
+//     }
+ 
+//     const io = req.app.get("io");
+//     if (io) {
+//       io.emit("newJourney", newJourney);
+//     }
+//     return res.status(201).json({
+//       message: "Journey created successfully.",
+//       newJourney,
+//       updatedAsset: asset,
+//     });
+//   } catch (error) {
+//     return res.status(500).json({
+//       message: "Server error",
+//       error: error.message,
+//     });
+//   }
+// };
+ 
+
 export const createJourney = async (req, res) => {
   try {
     const { Journey_Type, vehicleNumber, Journey_shift } = req.body;
@@ -487,25 +593,18 @@ export const createJourney = async (req, res) => {
       });
     }
     const driver = await Driver.findOne({ vehicleNumber });
- 
     if (!driver) {
-      return res.status(404).json({
-        message: "No driver found with this vehicle number.",
-      });
+      return res.status(404).json({ message: "Driver not found." });
     }
     const asset = await Asset.findOne({ driver: driver._id }).populate({
       path: "passengers.passengers.passenger",
       model: "Passenger",
       select: "Employee_ID Employee_Name Employee_PhoneNumber",
     });
- 
     if (!asset) {
-      return res.status(404).json({
-        message: "No assigned vehicle found for this driver.",
-      });
+      return res.status(404).json({ message: "No assigned vehicle found for this driver." });
     }
     const existingJourney = await Journey.findOne({ Driver: driver._id });
- 
     if (existingJourney) {
       await sendWhatsAppMessage(
         driver.phoneNumber,
@@ -524,52 +623,41 @@ export const createJourney = async (req, res) => {
       Occupancy: 0,
       SOS_Status: false,
     });
- 
     await newJourney.save();
     asset.isActive = true;
     await asset.save();
     if (Journey_Type.toLowerCase() === "pickup") {
       for (const shift of asset.passengers) {
         if (shift.shift !== Journey_shift) continue;
- 
-        for (const shiftPassenger of shift.passengers) {
-          const { passenger, bufferStart, bufferEnd } = shiftPassenger;
- 
+        for (const sp of shift.passengers) {
+          const { passenger, bufferStart, bufferEnd } = sp;
           if (!passenger) continue;
           if (bufferStart) {
             try {
               await schedulePickupNotification(passenger, bufferStart);
-            } catch (err) {}
+            } catch (err) {
+              console.error(err);
+            }
           }
           if (bufferEnd) {
             try {
               await scheduleBufferEndNotification(passenger, bufferEnd);
-            } catch (err) {}
+            } catch (err) {
+              console.error(err);
+            }
           }
         }
       }
       try {
-        const mockReq = {
-          body: { vehicleNumber, Journey_shift },
-        };
-        const mockRes = {
-          status: (code) => ({
-            json: (data) => {},
-          }),
-        };
-        await startRideUpdatePassengerController(mockReq, mockRes);
-        // await sendOtherPassengerSameShiftUpdateMessage(
-        //   Journey_shift,
-        //   asset._id
-        // );
-      } catch (err) {}
-    } else {
-    }
- 
+        await startRideUpdatePassengerController(
+          { body: { vehicleNumber, Journey_shift } },
+          { status: () => ({ json: () => {} }) }
+        );
+      } catch (err) {
+        console.error(err);
+      } }
     const io = req.app.get("io");
-    if (io) {
-      io.emit("newJourney", newJourney);
-    }
+    if (io) io.emit("newJourney", newJourney);
     return res.status(201).json({
       message: "Journey created successfully.",
       newJourney,
@@ -583,6 +671,7 @@ export const createJourney = async (req, res) => {
   }
 };
  
+
 export const getJourneys = async (req, res) => {
   try {
     const journeys = await Journey.find()
