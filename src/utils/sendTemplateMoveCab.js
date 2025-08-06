@@ -3,8 +3,8 @@ export const sendTemplateMoveCab = async (phoneNumber, name) => {
   const url = 'https://live-mt-server.wati.io/388428/api/v1/sendTemplateMessages';
 
   const payload = {
-    template_name: 'update_passenger_move_cab',
-    broadcast_name: `update_passenger_move_cab_${new Date().toISOString().replace(/[-:.TZ]/g, '')}`,
+    template_name: 'update_passenger_move_cab_final',
+    broadcast_name: `update_passenger_move_cab_final_${new Date().toISOString().replace(/[-:.TZ]/g, '')}`,
     receivers: [
       {
         whatsappNumber: phoneNumber,
