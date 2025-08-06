@@ -1035,6 +1035,46 @@ export const sendPickupConfirmation = async (req, res) => {
 // };
  
 
+//correct
+
+// export const schedulePickupNotification = async (passenger, bufferStart) => {
+//   const phoneNumber = passenger?.Employee_PhoneNumber;
+//   const name = passenger?.Employee_Name;
+ 
+//   if (
+//     !phoneNumber ||
+//     !name ||
+//     !bufferStart ||
+//     isNaN(new Date(bufferStart).getTime())
+//   ) {
+//     return;
+//   }
+ 
+//   const templateName = "pick_up_passenger_notification_before_10_minutes__";
+//   const broadcastName = `pick_up_passenger_notification_before_10_minutes___${formatBroadcastName(
+//     bufferStart
+//   )}`;
+ 
+//   const pickupDate = new Date(bufferStart);
+//   const sendTime = new Date(pickupDate.getTime() - 10 * 60 * 1000);
+//   const scheduledAt = sendTime.toISOString();
+ 
+//   try {
+//     const result = await sendPickupTemplateBefore10Min(
+//       phoneNumber,
+//       name,
+//       templateName,
+//       broadcastName,
+//       scheduledAt
+//     );
+//     return result;
+//   } catch (err) {
+//     console.error("Failed to schedule pickup notification:", err);
+//     throw err;
+//   }
+// };
+ 
+
 export const schedulePickupNotification = async (passenger, bufferStart) => {
   const phoneNumber = passenger?.Employee_PhoneNumber;
   const name = passenger?.Employee_Name;
@@ -1048,30 +1088,36 @@ export const schedulePickupNotification = async (passenger, bufferStart) => {
     return;
   }
  
+  const firstRaw = String(name).trim().split(/\s+/)[0] || name;
   const templateName = "pick_up_passenger_notification_before_10_minutes__";
+  const pickupDate = new Date(bufferStart);
+  const now = new Date();
+  const deltaMs = pickupDate.getTime() - now.getTime();
+  let scheduledAt;
+  if (deltaMs > 10 * 60 * 1000) {
+    scheduledAt = new Date(pickupDate.getTime() - 10 * 60 * 1000).toISOString();
+  } else if (deltaMs > 0) {
+    scheduledAt = new Date().toISOString();
+  } else {
+    return;
+  }
   const broadcastName = `pick_up_passenger_notification_before_10_minutes___${formatBroadcastName(
     bufferStart
   )}`;
  
-  const pickupDate = new Date(bufferStart);
-  const sendTime = new Date(pickupDate.getTime() - 10 * 60 * 1000);
-  const scheduledAt = sendTime.toISOString();
- 
   try {
-    const result = await sendPickupTemplateBefore10Min(
-      phoneNumber,
-      name,
-      templateName,
-      broadcastName,
-      scheduledAt
-    );
-    return result;
+    return await sendPickupTemplateBefore10Min( phoneNumber, firstRaw, templateName, broadcastName, scheduledAt );
   } catch (err) {
     console.error("Failed to schedule pickup notification:", err);
     throw err;
-  }
-};
+  } };
  
+
+
+
+
+
+
 function formatBroadcastName(pickupTime) {
   const dt = new Date(pickupTime);
   const day = String(dt.getDate()).padStart(2, "0");
