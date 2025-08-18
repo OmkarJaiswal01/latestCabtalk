@@ -379,109 +379,140 @@ export const sendPassengerList = async (req, res) => {
       return res.status(400).json({ success: false, message: "Phone number required." });
     }
 
-    const driver = await Driver.findOne({ phoneNumber });
+    const driver = await Driver.findOne({ phoneNumber }).exec();
     console.log("[sendPassengerList] driver found:", !!driver);
     if (!driver) return res.status(404).json({ success: false, message: "Driver not found." });
 
-    // populate passenger docs
-    const asset = await Asset.findOne({ driver: driver._id }).populate({
-      path: "passengers.passengers.passenger",
-      model: "Passenger",
-      select: "Employee_Name Employee_PhoneNumber Employee_Address",
-    }).lean();
+    // Keep as mongoose docs (don't lean) so populate works reliably
+    const asset = await Asset.findOne({ driver: driver._id })
+      .populate({
+        path: "passengers.passengers.passenger",
+        model: "Passenger",
+        select: "Employee_Name Employee_PhoneNumber Employee_Address",
+      })
+      .exec();
+
     console.log("[sendPassengerList] asset found:", !!asset);
     if (!asset) {
-      await sendWhatsAppMessage(phoneNumber, "No asset assigned to you.").catch(e => console.warn(e.message));
+      await sendWhatsAppMessage(phoneNumber, "No asset assigned to you.").catch((e) => console.warn(e.message));
       return res.status(404).json({ success: false, message: "No asset assigned." });
     }
 
-    const journey = await Journey.findOne({ Driver: driver._id }).lean();
+    const journey = await Journey.findOne({ Driver: driver._id }).exec();
     console.log("[sendPassengerList] journey found:", !!journey);
     if (!journey) return res.status(500).json({ success: false, message: "Journey record missing." });
 
-    const shiftBlock = (asset.passengers || []).find(b => b.shift === journey.Journey_shift);
-    console.log("[sendPassengerList] shiftBlock found:", !!shiftBlock, "shift:", journey.Journey_shift);
+    // Find the shift block matching journey shift (string equality)
+    const shiftBlock = (asset.passengers || []).find(
+      (b) => String(b.shift) === String(journey.Journey_shift)
+    );
+    console.log("[sendPassengerList] shiftBlock found:", !!shiftBlock, "expected shift:", journey.Journey_shift);
     if (!shiftBlock || !Array.isArray(shiftBlock.passengers) || shiftBlock.passengers.length === 0) {
-      await sendWhatsAppMessage(phoneNumber, "No passengers assigned to this Shift.").catch(e => console.warn(e.message));
-      return res.status(200).json({ success: true, message: "No passengers for this shift.", rows: [] });
+      await sendWhatsAppMessage(phoneNumber, "No passengers assigned to this Shift.").catch((e) => console.warn(e.message));
+      return res.status(200).json({ success: true, message: "No passengers for this shift.", rows: [], debug: [] });
     }
 
-    // compute "now" in IST as minutes-since-midnight
+    // Compute IST "now" and today's weekday in IST
     const nowUTC = new Date();
     const nowUTCMinutes = nowUTC.getUTCHours() * 60 + nowUTC.getUTCMinutes();
     const nowISTMinutes = (nowUTCMinutes + 330) % (24 * 60);
-    // compute today's weekday in IST (so day checks align with IST)
-    // derive IST date by shifting current UTC by 330 minutes
     const istDate = new Date(nowUTC.getTime() + 330 * 60 * 1000);
-    const WEEK_DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+    const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     const today = WEEK_DAYS[istDate.getDay()];
-    console.log("[sendPassengerList] IST now minutes:", nowISTMinutes, "IST date:", istDate.toISOString(), "today:", today);
+    console.log("[sendPassengerList] IST now:", istDate.toISOString(), "today:", today, "nowISTMinutes:", nowISTMinutes);
 
-    const boardedIds = new Set((journey.boardedPassengers || []).map(evt =>
-      (typeof evt.passenger === "object" ? String(evt.passenger._id || evt.passenger) : String(evt.passenger))
-    ));
+    const boardedIds = new Set(
+      (journey.boardedPassengers || []).map((evt) =>
+        typeof evt.passenger === "object" ? String(evt.passenger._id || evt.passenger) : String(evt.passenger)
+      )
+    );
     console.log("[sendPassengerList] boardedIds:", Array.from(boardedIds));
 
-    // debug print raw passengers
-    console.log("[sendPassengerList] raw shiftBlock passengers:", shiftBlock.passengers.map((ps,i) => ({
-      idx: i,
-      passengerId: ps.passenger?._id?.toString(),
-      name: ps.passenger?.Employee_Name,
-      wfoDays: ps.wfoDays,
-      bufferStart: ps.bufferStart,
-      bufferEnd: ps.bufferEnd
-    })));
+    // Collect detailed debug info
+    const debug = [];
+    const rows = [];
 
-    const rows = (shiftBlock.passengers || []).filter(ps => {
+    for (let i = 0; i < shiftBlock.passengers.length; i++) {
+      const ps = shiftBlock.passengers[i];
+      const dbg = {
+        idx: i,
+        passengerId: ps && ps.passenger ? String(ps.passenger._id || ps.passenger) : null,
+        name: ps?.passenger?.Employee_Name ?? null,
+        rawWfoDays: ps?.wfoDays ?? null,
+        normalizedDays: null,
+        bufferStart: ps?.bufferStart ?? null,
+        bufferEnd: ps?.bufferEnd ?? null,
+        startMinIST: null,
+        endMinIST: null,
+        boarded: false,
+        included: false,
+        reason: null,
+      };
+
       if (!ps || !ps.passenger || !ps.passenger._id) {
-        console.log("[filter] skipping - missing passenger object", ps);
-        return false;
+        dbg.reason = "missing passenger object or ID";
+        debug.push(dbg);
+        console.log("[sendPassengerList][filter] skipping -", dbg.reason, dbg);
+        continue;
       }
+
       const pid = String(ps.passenger._id);
-
-      // boarded
       if (boardedIds.has(pid)) {
-        console.log(`[filter] skipping ${pid} - boarded`);
-        return false;
+        dbg.boarded = true;
+        dbg.reason = "already boarded";
+        debug.push(dbg);
+        console.log(`[sendPassengerList][filter] skipping ${pid} - boarded`);
+        continue;
       }
 
-      // normalize wfoDays read from DB (defensive)
-      const rawDays = Array.isArray(ps.wfoDays) ? ps.wfoDays : (ps.wfoDays ? [ps.wfoDays] : []);
-      const normDays = rawDays.map(d => normalizeDayString(d)).filter(Boolean);
-      console.log(`[filter] passenger ${pid} rawDays:`, rawDays, "normDays:", normDays);
+      // Normalize wfoDays defensively
+      const rawDays = Array.isArray(ps.wfoDays) ? ps.wfoDays : ps.wfoDays ? [ps.wfoDays] : [];
+      const normDays = rawDays.map((d) => normalizeDayString(d)).filter(Boolean);
+      dbg.normalizedDays = normDays;
 
-      // PRIMARY: day must match
       if (!normDays.includes(today)) {
-        console.log(`[filter] skipping ${pid} - today (${today}) not in wfoDays`);
-        return false;
+        dbg.reason = `today (${today}) not in wfoDays`;
+        debug.push(dbg);
+        console.log(`[sendPassengerList][filter] skipping ${pid} - ${dbg.reason}`, dbg);
+        continue;
       }
 
-      // enforce buffer window only if both valid — otherwise allow (you requested day-first behaviour)
+      // If both buffers exist and valid, enforce; otherwise allow (day-match primary)
       const startMin = toMinutesOfDayInIST(ps.bufferStart);
       const endMin = toMinutesOfDayInIST(ps.bufferEnd);
-      console.log(`[filter] passenger ${pid} startMin:${startMin} endMin:${endMin} (IST)`);
+      dbg.startMinIST = startMin;
+      dbg.endMinIST = endMin;
 
       if (startMin != null && endMin != null) {
         if (!isWithinWindow(startMin, endMin, nowISTMinutes)) {
-          console.log(`[filter] skipping ${pid} - outside IST time window`);
-          return false;
+          dbg.reason = `outside time window (${startMin} -> ${endMin}) IST`;
+          debug.push(dbg);
+          console.log(`[sendPassengerList][filter] skipping ${pid} - ${dbg.reason}`, dbg);
+          continue;
         }
       } else {
-        console.log(`[filter] passenger ${pid} has missing/invalid buffers - allowed because day matched`);
+        dbg.reason = "day matched, no valid buffers (allowed)";
       }
 
-      console.log(`[filter] including ${pid}`);
-      return true;
-    }).map(ps => ({
-      title: formatTitle(ps.passenger.Employee_Name || "Unknown", ps.passenger.Employee_PhoneNumber || "Unknown"),
-      description: `📍 ${ps.passenger.Employee_Address || "Address not set"}`.slice(0,72)
-    }));
+      // Passed all checks
+      dbg.included = true;
+      dbg.reason = dbg.reason || "included";
+      debug.push(dbg);
 
-    console.log("[sendPassengerList] final rows count:", rows.length);
+      rows.push({
+        title: formatTitle(ps.passenger.Employee_Name || "Unknown", ps.passenger.Employee_PhoneNumber || "Unknown"),
+        description: `📍 ${ps.passenger.Employee_Address || "Address not set"}`.slice(0, 72),
+      });
+    }
+
+    console.log("[sendPassengerList] debug per passenger:", JSON.stringify(debug, null, 2));
+    console.log("[sendPassengerList] rows count:", rows.length);
 
     if (rows.length === 0) {
-      await sendWhatsAppMessage(phoneNumber, "No passengers scheduled for now (either not today or outside time window).").catch(e => console.warn(e.message));
-      return res.status(200).json({ success: true, message: "No passengers available now.", rows: [] });
+      await sendWhatsAppMessage(phoneNumber, "No passengers scheduled for now (either not today or outside time window).").catch((e) =>
+        console.warn(e.message)
+      );
+      return res.status(200).json({ success: true, message: "No passengers available now.", rows: [], debug });
     }
 
     const watiPayload = {
@@ -489,7 +520,7 @@ export const sendPassengerList = async (req, res) => {
       body: `Passenger list for (${driver.vehicleNumber || "Unknown Vehicle"}):`,
       footer: "CabTalk",
       buttonText: "Menu",
-      sections: [{ title: "Passenger Details", rows }]
+      sections: [{ title: "Passenger Details", rows }],
     };
 
     console.log("[sendPassengerList] watiPayload prepared, rows:", rows.length);
@@ -500,19 +531,16 @@ export const sendPassengerList = async (req, res) => {
         `https://live-mt-server.wati.io/388428/api/v1/sendInteractiveListMessage?whatsappNumber=${phoneNumber}`,
         watiPayload,
         {
-          headers: { Authorization: `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI5MzAwNGExMi04OWZlLTQxN2MtODBiNy0zMTljMjY2ZjliNjUiLCJ1bmlxdWVfbmFtZSI6ImhhcmkudHJpcGF0aGlAZ3hpbmV0d29ya3MuY29tIiwibmFtZWlkIjoiaGFyaS50cmlwYXRoaUBneGluZXR3b3Jrcy5jb20iLCJlbWFpbCI6ImhhcmkudHJpcGF0aGlAZ3hpbmV0d29ya3MuY29tIiwiYXV0aF90aW1lIjoiMDIvMDEvMjAyNSAwODozNDo0MCIsInRlbmFudF9pZCI6IjM4ODQyOCIsImRiX25hbWUiOiJtdC1wcm9kLVRlbmFudHMiLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOiJBRE1JTklTVFJBVE9SIiwiZXhwIjoyNTM0MDIzMDA4MDAsImlzcyI6IkNsYXJlX0FJIiwiYXVkIjoiQ2xhcmVfQUkifQ.tvRl-g9OGF3kOq6FQ-PPdRtfVrr4BkfxrRKoHc7tbC0`, 
-          "Content-Type": "application/json-patch+json" },
-          timeout: 10000
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json-patch+json" },
+          timeout: 10000,
         }
       );
       console.log("[sendPassengerList] WATI response:", response.status);
-      return res.status(200).json({ success: true, message: "Passenger list sent via WhatsApp.", data: response.data, rows });
+      return res.status(200).json({ success: true, message: "Passenger list sent via WhatsApp.", data: response.data, rows, debug });
     } catch (watiErr) {
       console.error("[sendPassengerList] WATI error:", watiErr?.response?.data || watiErr.message);
-      // return rows for debug
-      return res.status(200).json({ success: false, message: "WATI send failed - returning rows for debug.", error: watiErr?.response?.data || watiErr.message, rows });
+      return res.status(200).json({ success: false, message: "WATI send failed - returning rows + debug.", error: watiErr?.response?.data || watiErr.message, rows, debug });
     }
-
   } catch (err) {
     console.error("[sendPassengerList] unexpected error:", err);
     return res.status(500).json({ success: false, message: "Internal server error.", error: err.message });
