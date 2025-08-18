@@ -27,10 +27,7 @@ export const sendPassengerList = async (req, res) => {
 
     const driver = await Driver.findOne({ phoneNumber });
     if (!driver) {
-      console.warn(
-        "[sendPassengerList] No driver for phoneNumber",
-        phoneNumber
-      );
+      console.warn("[sendPassengerList] No driver for", phoneNumber);
       return res
         .status(404)
         .json({ success: false, message: "Driver not found." });
@@ -78,8 +75,11 @@ export const sendPassengerList = async (req, res) => {
       });
     }
 
-    // ✅ Get today's weekday (Mon, Tue, Wed, Thu, Fri, Sat, Sun)
+    // ✅ Today's weekday
     const today = new Date().toLocaleString("en-US", { weekday: "short" });
+
+    // ✅ Current time
+    const now = new Date();
 
     const boardedIds = new Set(
       journey.boardedPassengers.map((evt) =>
@@ -89,15 +89,22 @@ export const sendPassengerList = async (req, res) => {
       )
     );
 
-    // ✅ Filter passengers: only today's WFO + not boarded
+    // ✅ Filter by: day + time + not boarded
     let rows = shiftBlock.passengers
       .filter((ps) => {
-        return (
-          ps.passenger &&
-          Array.isArray(ps.wfoDays) &&
-          ps.wfoDays.includes(today) && // ✅ Only keep today's passengers
-          !boardedIds.has(ps.passenger._id.toString())
-        );
+        if (!ps.passenger || !Array.isArray(ps.wfoDays)) return false;
+
+        // Check today's WFO
+        if (!ps.wfoDays.includes(today)) return false;
+
+        // Check time window
+        const start = ps.bufferStart ? new Date(ps.bufferStart) : null;
+        const end = ps.bufferEnd ? new Date(ps.bufferEnd) : null;
+
+        if (start && end && (now < start || now > end)) return false;
+
+        // Check not boarded
+        return !boardedIds.has(ps.passenger._id.toString());
       })
       .map((ps) => ({
         title: formatTitle(
@@ -110,11 +117,11 @@ export const sendPassengerList = async (req, res) => {
     if (rows.length === 0) {
       await sendWhatsAppMessage(
         phoneNumber,
-        "No passengers scheduled for today or all have boarded."
+        "No passengers scheduled for now (either not today or outside time window)."
       );
       return res.status(200).json({
         success: true,
-        message: "No passengers available today for this cab.",
+        message: "No passengers available right now for this cab.",
       });
     }
 
@@ -133,7 +140,7 @@ export const sendPassengerList = async (req, res) => {
       watiPayload,
       {
         headers: {
-          Authorization: `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI5MzAwNGExMi04OWZlLTQxN2MtODBiNy0zMTljMjY2ZjliNjUiLCJ1bmlxdWVfbmFtZSI6ImhhcmkudHJpcGF0aGlAZ3hpbmV0d29ya3MuY29tIiwibmFtZWlkIjoiaGFyaS50cmlwYXRoaUBneGluZXR3b3Jrcy5jb20iLCJlbWFpbCI6ImhhcmkudHJpcGF0aGlAZ3hpbmV0d29ya3MuY29tIiwiYXV0aF90aW1lIjoiMDIvMDEvMjAyNSAwODozNDo0MCIsInRlbmFudF9pZCI6IjM4ODQyOCIsImRiX25hbWUiOiJtdC1wcm9kLVRlbmFudHMiLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOiJBRE1JTklTVFJBVE9SIiwiZXhwIjoyNTM0MDIzMDA4MDAsImlzcyI6IkNsYXJlX0FJIiwiYXVkIjoiQ2xhcmVfQUkifQ.tvRl-g9OGF3kOq6FQ-PPdRtfVrr4BkfxrRKoHc7tbC0`,
+          Authorization: `Bearer <YOUR_WATI_TOKEN>`,
           "Content-Type": "application/json-patch+json",
         },
       }
