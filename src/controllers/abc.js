@@ -78,7 +78,7 @@ export const sendPassengerList = async (req, res) => {
       });
     }
 
-    // Get today's weekday (Mon, Tue, Wed, Thu, Fri, Sat, Sun)
+    // ✅ Get today's weekday (Mon, Tue, Wed, Thu, Fri, Sat, Sun)
     const today = new Date().toLocaleString("en-US", { weekday: "short" });
 
     const boardedIds = new Set(
@@ -89,25 +89,28 @@ export const sendPassengerList = async (req, res) => {
       )
     );
 
-    // Filter passengers by WFO days & not boarded
+    // ✅ Filter passengers: only today's WFO + not boarded
     let rows = shiftBlock.passengers
       .filter((ps) => {
         return (
           ps.passenger &&
           Array.isArray(ps.wfoDays) &&
-          ps.wfoDays.includes(today) &&
+          ps.wfoDays.includes(today) && // ✅ Only keep today's passengers
           !boardedIds.has(ps.passenger._id.toString())
         );
       })
       .map((ps) => ({
-        title: formatTitle(ps.passenger.Employee_Name, ps.passenger.Employee_PhoneNumber),
+        title: formatTitle(
+          ps.passenger.Employee_Name,
+          ps.passenger.Employee_PhoneNumber
+        ),
         description: `📍 ${ps.passenger.Employee_Address}`.slice(0, 72),
       }));
 
     if (rows.length === 0) {
       await sendWhatsAppMessage(
         phoneNumber,
-        "All passengers of the shift have either boarded or are not scheduled for today."
+        "No passengers scheduled for today or all have boarded."
       );
       return res.status(200).json({
         success: true,
