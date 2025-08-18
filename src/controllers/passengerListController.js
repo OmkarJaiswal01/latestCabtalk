@@ -296,8 +296,6 @@
 // };
 
 
-
-
 // passengerListController.js
 import axios from "axios";
 import Driver from "../models/driverModel.js";
@@ -316,15 +314,9 @@ function formatTitle(name, phoneNumber) {
   return title;
 }
 
-/**
- * Convert various stored buffer representations to minutes-since-midnight.
- * Accepts Date objects, ISO date strings, or "HH:mm" strings.
- * Returns null if invalid.
- */
 function toMinutesOfDay(value) {
   if (!value && value !== 0) return null;
 
-  // Date instance or numeric timestamp
   if (value instanceof Date) {
     if (isNaN(value.getTime())) return null;
     return value.getHours() * 60 + value.getMinutes();
@@ -334,10 +326,7 @@ function toMinutesOfDay(value) {
     if (isNaN(d.getTime())) return null;
     return d.getHours() * 60 + d.getMinutes();
   }
-
-  // String — try ISO parse
   if (typeof value === "string") {
-    // If "HH:mm" pattern
     const hhmm = value.match(/^(\d{1,2}):(\d{2})$/);
     if (hhmm) {
       const hh = Number(hhmm[1]);
@@ -347,35 +336,30 @@ function toMinutesOfDay(value) {
       }
       return null;
     }
-
-    // Try Date parse for ISO or other date-time string
     const d = new Date(value);
     if (!isNaN(d.getTime())) {
       return d.getHours() * 60 + d.getMinutes();
     }
   }
-
   return null;
 }
 
-/**
- * Check whether nowMin is within the start..end window.
- * Supports windows crossing midnight (overnight).
- * If startMin or endMin is null -> returns false (we expect both to exist).
- */
 function isWithinWindow(startMin, endMin, nowMin) {
   if (startMin == null || endMin == null) return false;
   if (startMin <= endMin) {
     return nowMin >= startMin && nowMin <= endMin;
   } else {
-    // overnight e.g., 23:00 (1380) -> 02:00 (120)
+    // overnight window
     return nowMin >= startMin || nowMin <= endMin;
   }
 }
 
 export const sendPassengerList = async (req, res) => {
+  console.log("[sendPassengerList] called");
   try {
     const { phoneNumber } = req.body;
+    console.log("[sendPassengerList] request body:", req.body);
+
     if (!phoneNumber) {
       console.warn("[sendPassengerList] Missing phoneNumber in request");
       return res
@@ -384,26 +368,47 @@ export const sendPassengerList = async (req, res) => {
     }
 
     const driver = await Driver.findOne({ phoneNumber });
+    console.log("[sendPassengerList] driver lookup result:", !!driver);
     if (!driver) {
       console.warn("[sendPassengerList] No driver for", phoneNumber);
       return res
         .status(404)
         .json({ success: false, message: "Driver not found." });
     }
+    console.log("[sendPassengerList] driver:", {
+      id: driver._id?.toString(),
+      name: driver.name,
+      phoneNumber: driver.phoneNumber,
+      vehicleNumber: driver.vehicleNumber,
+    });
 
     const asset = await Asset.findOne({ driver: driver._id }).populate({
       path: "passengers.passengers.passenger",
       model: "Passenger",
       select: "Employee_Name Employee_PhoneNumber Employee_Address",
     });
+    console.log("[sendPassengerList] asset lookup result:", !!asset);
     if (!asset) {
       console.warn("[sendPassengerList] No asset for driver", driver._id);
+      await sendWhatsAppMessage(
+        phoneNumber,
+        "No asset assigned to you. Please contact operations."
+      ).catch((e) =>
+        console.warn("[sendPassengerList] sendWhatsAppMessage error:", e.message)
+      );
       return res
         .status(404)
         .json({ success: false, message: "No asset assigned to this driver." });
     }
+    console.log("[sendPassengerList] asset shortId/driver:", {
+      shortId: asset.shortId,
+      capacity: asset.capacity,
+      isActive: asset.isActive,
+      passengerGroups: (asset.passengers || []).length,
+    });
 
     const journey = await Journey.findOne({ Driver: driver._id });
+    console.log("[sendPassengerList] journey lookup result:", !!journey);
     if (!journey) {
       console.error(
         "[sendPassengerList] Missing journey record for driver",
@@ -413,19 +418,27 @@ export const sendPassengerList = async (req, res) => {
         .status(500)
         .json({ success: false, message: "Journey record missing." });
     }
+    console.log("[sendPassengerList] journey:", {
+      id: journey._id?.toString(),
+      Journey_shift: journey.Journey_shift,
+      boardedCount: (journey.boardedPassengers || []).length,
+    });
 
-    const shiftBlock = asset.passengers.find(
+    const shiftBlock = (asset.passengers || []).find(
       (b) => b.shift === journey.Journey_shift
     );
-
+    console.log("[sendPassengerList] shiftBlock found:", !!shiftBlock);
     if (
       !shiftBlock ||
       !Array.isArray(shiftBlock.passengers) ||
       shiftBlock.passengers.length === 0
     ) {
+      console.log("[sendPassengerList] no passengers in this shiftBlock");
       await sendWhatsAppMessage(
         phoneNumber,
         "No passengers assigned to this Shift."
+      ).catch((e) =>
+        console.warn("[sendPassengerList] sendWhatsAppMessage error:", e.message)
       );
       return res.status(200).json({
         success: true,
@@ -440,6 +453,10 @@ export const sendPassengerList = async (req, res) => {
     const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     const today = WEEK_DAYS[now.getDay()];
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    console.log("[sendPassengerList] now (Asia/Kolkata):", now.toISOString(), {
+      day: today,
+      nowMinutes,
+    });
 
     const boardedIds = new Set(
       (journey.boardedPassengers || []).map((evt) =>
@@ -448,19 +465,42 @@ export const sendPassengerList = async (req, res) => {
           : String(evt.passenger)
       )
     );
+    console.log("[sendPassengerList] boardedIds:", Array.from(boardedIds));
 
-    // Filter passengers: must be populated, scheduled for today (wfoDays includes today),
-    // within buffer window (supports overnight), and not already boarded.
+    // debug list of all passengers in shiftBlock
+    console.log(
+      "[sendPassengerList] raw passengers in shiftBlock:",
+      shiftBlock.passengers.map((ps, i) => ({
+        idx: i,
+        passengerId: ps.passenger?._id?.toString(),
+        name: ps.passenger?.Employee_Name,
+        wfoDays: ps.wfoDays,
+        bufferStart: ps.bufferStart,
+        bufferEnd: ps.bufferEnd,
+      }))
+    );
+
     const rows = (shiftBlock.passengers || [])
       .filter((ps) => {
         // ensure passenger exists and populated
-        if (!ps || !ps.passenger || !ps.passenger._id) return false;
-
+        if (!ps || !ps.passenger || !ps.passenger._id) {
+          console.log("[sendPassengerList][filter] skipping - no passenger object", ps);
+          return false;
+        }
         const pid = ps.passenger._id.toString();
-        if (boardedIds.has(pid)) return false;
 
-        // wfoDays must be an array and include today
+        // skip if boarded
+        if (boardedIds.has(pid)) {
+          console.log(`[sendPassengerList][filter] skipping boarded passenger ${pid}`);
+          return false;
+        }
+
+        // wfoDays must include today
         if (!Array.isArray(ps.wfoDays) || !ps.wfoDays.includes(today)) {
+          console.log(
+            `[sendPassengerList][filter] skipping ${pid} - wfoDays doesn't include ${today}`,
+            ps.wfoDays
+          );
           return false;
         }
 
@@ -468,12 +508,28 @@ export const sendPassengerList = async (req, res) => {
         const startMin = toMinutesOfDay(ps.bufferStart);
         const endMin = toMinutesOfDay(ps.bufferEnd);
 
-        // If either invalid or missing — treat as NOT allowed (data should include both)
-        if (startMin == null || endMin == null) return false;
+        // log parsed buffer values
+        console.log(
+          `[sendPassengerList][filter] passenger ${pid} parsed buffers -> startMin: ${startMin}, endMin: ${endMin}`
+        );
 
-        // check window
-        if (!isWithinWindow(startMin, endMin, nowMinutes)) return false;
+        if (startMin == null || endMin == null) {
+          console.log(
+            `[sendPassengerList][filter] skipping ${pid} - invalid or missing bufferStart/bufferEnd`
+          );
+          return false;
+        }
 
+        // check time window (supports overnight)
+        if (!isWithinWindow(startMin, endMin, nowMinutes)) {
+          console.log(
+            `[sendPassengerList][filter] skipping ${pid} - outside time window (${startMin}->${endMin})`
+          );
+          return false;
+        }
+
+        // passed all checks
+        console.log(`[sendPassengerList][filter] including ${pid}`);
         return true;
       })
       .map((ps) => ({
@@ -487,10 +543,14 @@ export const sendPassengerList = async (req, res) => {
         ),
       }));
 
+    console.log("[sendPassengerList] rows prepared count:", rows.length);
+
     if (rows.length === 0) {
       await sendWhatsAppMessage(
         phoneNumber,
         "No passengers scheduled for now (either not today or outside time window)."
+      ).catch((e) =>
+        console.warn("[sendPassengerList] sendWhatsAppMessage error:", e.message)
       );
       return res.status(200).json({
         success: true,
@@ -506,24 +566,47 @@ export const sendPassengerList = async (req, res) => {
       sections: [{ title: "Passenger Details", rows }],
     };
 
-    const response = await axios.post(
-      `https://live-mt-server.wati.io/388428/api/v1/sendInteractiveListMessage?whatsappNumber=${phoneNumber}`,
-      watiPayload,
-      {
-        headers: {
-          Authorization: `Bearer <YOUR_WATI_TOKEN>`,
-          "Content-Type": "application/json-patch+json",
-        },
-      }
-    );
+    console.log("[sendPassengerList] watiPayload:", JSON.stringify(watiPayload, null, 2));
 
-    return res.status(200).json({
-      success: true,
-      message: "Passenger list sent successfully via WhatsApp.",
-      data: response.data,
-    });
+    // Use env var for token; fallback if not set (but warn)
+    const token = process.env.WATI_TOKEN || "<YOUR_WATI_TOKEN>";
+    if (!process.env.WATI_TOKEN) {
+      console.warn("[sendPassengerList] WATI_TOKEN not set in env; using placeholder");
+    }
+
+    try {
+      const response = await axios.post(
+        `https://live-mt-server.wati.io/388428/api/v1/sendInteractiveListMessage?whatsappNumber=${phoneNumber}`,
+        watiPayload,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json-patch+json",
+          },
+          timeout: 10000,
+        }
+      );
+      console.log("[sendPassengerList] WATI response status:", response.status);
+      console.log("[sendPassengerList] WATI response data:", response.data);
+
+      return res.status(200).json({
+        success: true,
+        message: "Passenger list sent successfully via WhatsApp.",
+        data: response.data,
+      });
+    } catch (watiErr) {
+      console.error("[sendPassengerList] WATI API error:", watiErr?.response?.data || watiErr.message);
+      // still respond 200 with rows data for debugging if you want; here we return 502
+      return res.status(502).json({
+        success: false,
+        message: "Failed to send WhatsApp message via WATI.",
+        error: watiErr?.response?.data || watiErr.message,
+        debugRowsCount: rows.length,
+        debugRows: rows.slice(0, 10), // avoid huge payload
+      });
+    }
   } catch (error) {
-    console.error("[sendPassengerList] Error sending passenger list:", error);
+    console.error("[sendPassengerList] Error:", error);
     return res.status(500).json({
       success: false,
       message: "Internal server error.",
