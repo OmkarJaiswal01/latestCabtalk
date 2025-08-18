@@ -108,16 +108,60 @@ export const addAsset = asyncHandler(async (req, res) => {
     asset,
   });
 });
+
+
 export const getAllAssets = asyncHandler(async (req, res) => {
-  const assets = await Asset.find()
-    .populate("driver", "name vehicleNumber")
-    .populate("passengers.passengers.passenger", "Employee_ID Employee_Name Employee_PhoneNumber");
-  res.status(200).json({
-    success: true,
-    message: "Assets retrieved successfully.",
-    assets,
-  });
+  try {
+    const { day } = req.query; // optional ?day=Mon
+
+    const assets = await Asset.find()
+      .populate("driver", "name vehicleNumber")
+      .populate("passengers.passengers.passenger", "Employee_ID Employee_Name Employee_PhoneNumber Employee_Address")
+      .lean();
+
+    // If no day filter, return everything
+    if (!day) {
+      return res.status(200).json({
+        success: true,
+        message: "Assets retrieved successfully.",
+        assets,
+      });
+    }
+
+    // Validate day param
+    const validDays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    if (!validDays.includes(day)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid day. Use Mon–Sun.",
+      });
+    }
+
+    // Apply filtering by WFO days
+    const filtered = assets.map(asset => ({
+      ...asset,
+      passengers: asset.passengers.map(shiftGroup => ({
+        shift: shiftGroup.shift,
+        passengers: shiftGroup.passengers.filter(p => p.wfoDays.includes(day)),
+      })),
+    }));
+
+    res.status(200).json({
+      success: true,
+      message: `Assets filtered by ${day}`,
+      assets: filtered,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error retrieving assets.",
+      error: error.message,
+    });
+  }
 });
+
+
+
 export const updateAsset = asyncHandler(async (req, res) => {
   const { capacity, isActive } = req.body;
   const { id: assetId } = req.params;
