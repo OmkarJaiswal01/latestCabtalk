@@ -1,358 +1,160 @@
-import Asset from "../models/assetModel.js";
-import Driver from "../models/driverModel.js";
-import Journey from "../models/JourneyModel.js";
-import { sendPickupConfirmationMessage } from "../utils/PickUpPassengerSendTem.js";
-import { sendOtherPassengerSameShiftUpdateMessage } from "../utils/InformOtherPassenger.js";
-import { sendPickupTemplateBefore10Min } from "../utils/sendTempleteBeforeTenMinites.js";
-import { sendTemplateMoveCab } from "../utils/sendTemplateMoveCab.js";
-import { sendWhatsAppMessage } from "../utils/whatsappHelper.js";
+export const createJourney = async (req, res) => {
+  console.log("➡️ [START] createJourney triggered");
+  console.log("📦 Request Body:", req.body);
 
-export const sendPickupConfirmation = async (req, res) => {
   try {
-    console.log("📥 [Step 0] Received pickup confirmation request...");
+    const { Journey_Type, vehicleNumber, Journey_shift } = req.body;
 
-    const { pickedPassengerPhoneNumber } = req.body;
-
-    if (!pickedPassengerPhoneNumber) {
-      console.log("❌ [Step 1] No pickedPassengerPhoneNumber in request.");
+    console.log("🧪 Validating required fields...");
+    if (!Journey_Type || !vehicleNumber || !Journey_shift) {
+      console.warn("⚠️ Validation failed: Missing fields");
       return res.status(400).json({
-        success: false,
-        message: "pickedPassengerPhoneNumber is required.",
+        message: "Journey_Type, vehicleNumber and Journey_shift are required.",
       });
     }
+    console.log("✅ Fields validated");
 
-    const cleanedPhone = pickedPassengerPhoneNumber.replace(/\D/g, "");
+    console.log(`🔍 Searching for driver with vehicleNumber: ${vehicleNumber}`);
+    const driver = await Driver.findOne({ vehicleNumber });
 
-    console.log(`📞 [Step 2] Cleaned passenger phone: ${cleanedPhone}`);
-
-    if (!/^91\d{10}$/.test(cleanedPhone)) {
-      console.log("❌ [Step 2] Invalid phone format.");
-      return res.status(400).json({
-        success: false,
-        message: "Invalid Indian phone number format.",
+    if (!driver) {
+      console.warn("❌ Driver not found");
+      return res.status(404).json({
+        message: "No driver found with this vehicle number.",
       });
     }
+    console.log("✅ Driver found:", driver._id);
 
-    console.log("🔍 [Step 3] Searching for matching asset...");
-    const asset = await Asset.findOne({
-      "passengers.passengers.passenger": { $exists: true },
-    }).populate({
+    console.log(`🔍 Searching for asset assigned to driver ID: ${driver._id}`);
+    const asset = await Asset.findOne({ driver: driver._id }).populate({
       path: "passengers.passengers.passenger",
-      select: "Employee_PhoneNumber Employee_Name",
+      model: "Passenger",
+      select: "Employee_ID Employee_Name Employee_PhoneNumber wfoDays", // 🆕 ensure we fetch wfoDays
     });
 
     if (!asset) {
-      console.log("❌ [Step 3] Asset not found.");
-      return res.status(404).json({ success: false, message: "Asset not found." });
-    }
-
-    console.log("🔎 [Step 4] Looking for passenger in asset shifts...");
-    let pickedPassenger = null;
-    let currentShiftPassengers = [];
-
-    for (const shift of asset.passengers) {
-      const match = shift.passengers.find(
-        (sp) =>
-          sp.passenger?.Employee_PhoneNumber?.replace(/\D/g, "") === cleanedPhone
-      );
-      if (match) {
-        pickedPassenger = match.passenger;
-        currentShiftPassengers = shift.passengers;
-        break;
-      }
-    }
-
-    if (!pickedPassenger) {
-      console.log("❌ [Step 4] Picked passenger not found in asset shifts.");
+      console.warn("❌ No asset found for this driver");
       return res.status(404).json({
-        success: false,
-        message: "Picked passenger not found in asset.",
+        message: "No assigned vehicle found for this driver.",
       });
     }
+    console.log("✅ Asset found:", asset._id);
 
-    console.log(`✅ [Step 5] Found picked passenger: ${pickedPassenger.Employee_Name}`);
+    console.log("🔎 Checking for existing active journey for this driver...");
+    const existingJourney = await Journey.findOne({ Driver: driver._id });
 
-    console.log("📦 [Step 6] Fetching latest journey for asset...");
-    const journey = await Journey.findOne({ Asset: asset._id })
-      .sort({ createdAt: -1 })
-      .populate({
-        path: "boardedPassengers.passenger",
-        select: "Employee_PhoneNumber Employee_Name",
-      });
-
-    if (!journey) {
-      console.log("❌ [Step 6] Journey not found.");
-      return res.status(404).json({ success: false, message: "No journey found for asset." });
-    }
-
-    console.log("🧾 [Step 7] Checking if passenger already boarded...");
-    const alreadyBoarded = journey.boardedPassengers.some(
-      (bp) =>
-        (bp.passenger.Employee_PhoneNumber || "").replace(/\D/g, "") === cleanedPhone
-    );
-
-    if (alreadyBoarded) {
-      console.log("✅ [Step 7] Passenger already boarded.");
-      return res.status(400).json({ success: false, message: "Passenger already boarded." });
-    }
-
-    console.log("🟢 [Step 8] Boarding passenger...");
-    journey.boardedPassengers.push({ passenger: pickedPassenger._id });
-    await journey.save();
-
-    console.log("📲 [Step 9] Sending confirmation message to picked passenger...");
-    const confirmation = await sendPickupConfirmationMessage(
-      pickedPassenger.Employee_PhoneNumber,
-      pickedPassenger.Employee_Name
-    );
-
-    const now = new Date();
-    const boardedSet = new Set(
-      journey.boardedPassengers
-        .map((bp) => bp.passenger.Employee_PhoneNumber || "")
-        .map((num) => num.replace(/\D/g, ""))
-    );
-    boardedSet.add(cleanedPhone);
-
-    console.log("🔔 [Step 10] Notifying other passengers in the same shift...");
-    const notifiedPassengers = [];
-
-    for (const sp of currentShiftPassengers) {
-      const p = sp.passenger;
-      if (!p?.Employee_PhoneNumber) continue;
-
-      const phoneClean = p.Employee_PhoneNumber.replace(/\D/g, "");
-
-      if (boardedSet.has(phoneClean)) {
-        console.log(`🚫 Skipping ${p.Employee_Name}: Already boarded.`);
-        continue;
-      }
-
-      const bufferEndTime = sp.bufferEnd ? new Date(sp.bufferEnd) : null;
-
-      if (!bufferEndTime || isNaN(bufferEndTime.getTime())) {
-        console.warn(`⚠️ Skipping ${p.Employee_Name}: Invalid or missing bufferEnd.`);
-        continue;
-      }
-
-      if (bufferEndTime <= now) {
-        console.log(`⏱️ Skipping ${p.Employee_Name}: bufferEnd already passed.`);
-        continue;
-      }
-
-      console.log(`📩 Sending update to ${p.Employee_Name}...`);
-      const notify = await sendOtherPassengerSameShiftUpdateMessage(
-        p.Employee_PhoneNumber,
-        p.Employee_Name,
-        pickedPassenger.Employee_Name
+    if (existingJourney) {
+      console.warn("⛔ Active journey already exists");
+      await sendWhatsAppMessage(
+        driver.phoneNumber,
+        "Please end this current ride before starting a new one."
       );
-
-      notifiedPassengers.push({
-        name: p.Employee_Name,
-        phone: p.Employee_PhoneNumber,
-        success: notify.success,
-        error: notify.error || null,
+      return res.status(400).json({
+        message:
+          "Active journey exists. Please end the current ride before starting a new one.",
       });
     }
+    console.log("✅ No active journey found");
 
-    console.log("✅ [Step 11] All eligible notifications sent.");
-
-    return res.status(200).json({
-      success: true,
-      message: "Confirmation sent to picked passenger; shift-mates updated.",
-      pickedPassenger: {
-        name: pickedPassenger.Employee_Name,
-        phone: pickedPassenger.Employee_PhoneNumber,
-        confirmation,
-      },
-      notifiedPassengers,
-      boardedCount: journey.boardedPassengers.length,
+    console.log("🛠 Creating a new journey...");
+    const newJourney = new Journey({
+      Driver: driver._id,
+      Asset: asset._id,
+      Journey_Type,
+      Journey_shift,
+      Occupancy: 0,
+      SOS_Status: false,
     });
-  } catch (err) {
-    console.error("❌ [ERROR] sendPickupConfirmation:", err);
-    return res
-      .status(500)
-      .json({ success: false, message: "Server error", error: err.message });
-  }
-};
 
-export const schedulePickupNotification = async (passenger, bufferStart) => {
-  console.log("📦 Scheduling pickup notification...");
+    await newJourney.save();
+    console.log("✅ New journey saved:", newJourney._id);
 
-  const phoneNumber = passenger?.Employee_PhoneNumber;
-  const name = passenger?.Employee_Name;
+    console.log("🔧 Updating asset status to active...");
+    asset.isActive = true;
+    await asset.save();
+    console.log("✅ Asset updated:", asset._id);
 
-  if (!phoneNumber || !name || !bufferStart || isNaN(new Date(bufferStart).getTime())) {
-    console.warn(`❌ Invalid passenger data. name=${name}, phone=${phoneNumber}, bufferStart=${bufferStart}`);
-    return;
-  }
+    // ✅ New section: Schedule WhatsApp notifications for Pickup passengers
+    if (Journey_Type.toLowerCase() === "pickup") {
+      console.log("📣 Journey type is Pickup – scheduling passenger notifications...");
 
-  const templateName = "pick_up_passenger_notification_before_10_minutes__";
-  const broadcastName = `pick_up_passenger_notification_before_10_minutes___${formatBroadcastName(bufferStart)}`;
+      for (const shift of asset.passengers) {
+        if (shift.shift !== Journey_shift) continue;
 
-  const pickupDate = new Date(bufferStart);
-  const sendTime = new Date(pickupDate.getTime() - 10 * 60 * 1000);
-  const delay = sendTime.getTime() - Date.now();
+        for (const shiftPassenger of shift.passengers) {
+          const { passenger, bufferStart, bufferEnd } = shiftPassenger;
+          if (!passenger) continue;
 
-  const { hours, minutes, seconds } = convertMillisecondsToTime(delay);
+          // 🆕 Skip week-off passengers
+          if (!isPassengerWorkingToday(shiftPassenger)) {
+            console.log(`🚫 Skipping ${passenger.Employee_Name} (week off today)`);
+            continue;
+          }
 
-  console.log(`👤 Passenger: ${name}, Phone: ${phoneNumber}`);
-  console.log(`🕒 Pickup Time: ${pickupDate.toISOString()}`);
-  console.log(`🕑 Notification scheduled for: ${sendTime.toISOString()}`);
-  console.log(`⏳ Delay: ${delay} ms (${hours}h ${minutes}m ${seconds}s)`);
+          // 1. Schedule Pickup reminder at bufferStart
+          if (bufferStart) {
+            try {
+              await schedulePickupNotification(shiftPassenger, bufferStart); // 🆕 pass shiftPassenger (includes wfoDays)
+              console.log(`🟢 Pickup reminder scheduled for ${passenger.Employee_Name}`);
+            } catch (err) {
+              console.error(`❌ Failed to schedule pickup notification for ${passenger.Employee_Name}:`, err.message);
+            }
+          }
 
-  if (delay <= 0) {
-    console.log("⚠️ Pickup is too close or in the past. Sending notification immediately.");
-    try {
-      await sendPickupTemplateBefore10Min(phoneNumber, name, templateName, broadcastName);
-      console.log(`✅ Immediate notification sent to ${name} (${phoneNumber})`);
-    } catch (err) {
-      console.error(`❌ Failed to send immediate notification to ${name}:`, err);
-    }
-    return;
-  }
-
-  setTimeout(async () => {
-    try {
-      console.log(`🚀 Sending scheduled notification to ${name} at ${new Date().toISOString()}`);
-      await sendPickupTemplateBefore10Min(phoneNumber, name, templateName, broadcastName);
-      console.log(`✅ Scheduled notification sent to ${name} (${phoneNumber})`);
-    } catch (err) {
-      console.error(`❌ Failed to send scheduled pickup message to ${name}:`, err);
-    }
-  }, delay);
-};
-
-function formatBroadcastName(pickupTime) {
-  const dt = new Date(pickupTime);
-  const day = String(dt.getDate()).padStart(2, "0");
-  const month = String(dt.getMonth() + 1).padStart(2, "0");
-  const year = dt.getFullYear();
-  const hour = String(dt.getHours()).padStart(2, "0");
-  const min = String(dt.getMinutes()).padStart(2, "0");
-  return `${day}${month}${year}${hour}${min}`;
-}
-
-function convertMillisecondsToTime(ms) {
-  const totalSeconds = Math.floor(ms / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  return { hours, minutes, seconds };
-}
-
-export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
-  console.log("📦 [Step 0] Scheduling bufferEnd notification...");
-
-  const phoneNumber = passenger?.Employee_PhoneNumber;
-  const name = passenger?.Employee_Name;
-
-  if (!phoneNumber || !name || !bufferEnd || isNaN(new Date(bufferEnd).getTime())) {
-    console.warn(`❌ Invalid input. name=${name}, phone=${phoneNumber}, bufferEnd=${bufferEnd}`);
-    return;
-  }
-
-  const now = new Date();
-  const sendTime = new Date(bufferEnd);
-  const delay = sendTime.getTime() - now.getTime();
-
-  const { hours, minutes, seconds } = convertMillisecondsToTimeBufferEnd(delay);
-  console.log(`📅 bufferEnd for ${name}: ${sendTime.toISOString()}`);
-  console.log(`⏳ Notification in: ${hours}h ${minutes}m ${seconds}s (${delay}ms)`);
-
-  const sendIfStillNotBoarded = async () => {
-    try {
-      console.log(`🔍 Checking if ${name} (${phoneNumber}) has boarded...`);
-
-      const journey = await Journey.findOne({
-        Journey_Type: { $regex: /^pickup$/, $options: "i" },
-      })
-        .sort({ createdAt: -1 })
-        .populate("Driver", "phoneNumber")
-        .populate({
-          path: "Asset",
-          select: "passengers",
-          populate: {
-            path: "passengers.passengers.passenger",
-            model: "Passenger",
-            select: "Employee_Name Employee_PhoneNumber",
-          },
-        })
-        .populate("boardedPassengers.passenger", "Employee_PhoneNumber");
-
-      if (!journey) {
-        console.warn(`❌ No journey found.`);
-        return;
-      }
-
-      const driverPhoneNumber = journey?.Driver?.phoneNumber;
-      console.log("🚗 Driver phone number:", driverPhoneNumber);
-
-      const passengerAssigned = journey?.Asset?.passengers?.some((shift) =>
-        shift.passengers.some((p) =>
-          p.passenger?._id?.toString() === passenger._id?.toString()
-        )
-      );
-
-      if (!passengerAssigned) {
-        console.warn(`❌ Passenger not assigned to journey asset.`);
-        return;
-      }
-
-      const hasBoarded = journey.boardedPassengers?.some(
-        (bp) => bp.passenger?._id?.toString() === passenger._id?.toString()
-      );
-
-      if (!hasBoarded) {
-        console.log(`📨 Passenger ${name} NOT boarded. Sending messages...`);
-
-        await sendTemplateMoveCab(phoneNumber, name);
-        console.log(`✅ Passenger message sent to ${phoneNumber}`);
-
-        if (driverPhoneNumber && driverPhoneNumber.length >= 10) {
-          try {
-            const message = "⚠️ The passenger is late. You can move the cab now.";
-            await sendWhatsAppMessage(driverPhoneNumber, message);
-            console.log(`✅ Driver notified at ${driverPhoneNumber}`);
-          } catch (err) {
-            console.error("❌ Failed to send message to driver:", err.response?.data || err.message);
+          // 2. Schedule bufferEnd missed-boarding notification
+          if (bufferEnd) {
+            try {
+              await scheduleBufferEndNotification(passenger, bufferEnd);
+              console.log(`🕒 Missed-boarding check scheduled for ${passenger.Employee_Name}`);
+            } catch (err) {
+              console.error(`❌ Failed to schedule bufferEnd check for ${passenger.Employee_Name}:`, err.message);
+            }
           }
         }
-
-        // 🆕 CHANGE: Remove passenger from asset after bufferEnd
-        for (const shift of journey.Asset.passengers) {
-          shift.passengers = shift.passengers.filter(
-            (p) => p.passenger?._id?.toString() !== passenger._id?.toString()
-          );
-        }
-        await journey.Asset.save();
-
-        // 🆕 CHANGE: Emit socket event if available
-        if (global.io) {
-          global.io.emit("assetUpdated", journey.Asset);
-          console.log(`📡 assetUpdated event emitted for removed passenger ${name}`);
-        }
-      } else {
-        console.log(`🛑 Passenger ${name} already boarded. No reminder needed.`);
       }
-    } catch (err) {
-      console.error(`❌ Error checking boarding for ${name}:`, err.message);
-    }
-  };
 
-  if (delay <= 0) {
-    console.log("⚠️ bufferEnd already passed. Sending check immediately.");
-    await sendIfStillNotBoarded();
-  } else {
-    console.log(`⏳ Scheduling check in ${delay / 1000}s`);
-    setTimeout(sendIfStillNotBoarded, delay);
+      // 🔄 Notifying passenger app of shift update
+      try {
+        const mockReq = {
+          body: { vehicleNumber, Journey_shift },
+        };
+        const mockRes = {
+          status: (code) => ({
+            json: (data) =>
+              console.log(`🟢 Passenger notification response [${code}]:`, data),
+          }),
+        };
+        await startRideUpdatePassengerController(mockReq, mockRes);
+        console.log("✅ Assigned passengers notified");
+
+        console.log("📨 Notifying other passengers in same shift...");
+        await sendOtherPassengerSameShiftUpdateMessage(Journey_shift, asset._id);
+      } catch (err) {
+        console.error("🚨 Error during passenger notifications:", err.message);
+      }
+    } else {
+      console.log("ℹ️ Journey type is not Pickup – skipping passenger notification");
+    }
+
+    const io = req.app.get("io");
+    if (io) {
+      console.log("📡 Emitting socket event: newJourney");
+      io.emit("newJourney", newJourney);
+    } else {
+      console.warn("⚠️ Socket IO instance not found");
+    }
+
+    console.log("✅ [SUCCESS] Journey creation complete");
+    return res.status(201).json({
+      message: "Journey created successfully.",
+      newJourney,
+      updatedAsset: asset,
+    });
+  } catch (error) {
+    console.error("❌ [ERROR] Server error in createJourney:", error.message);
+    return res.status(500).json({
+      message: "Server error",
+      error: error.message,
+    });
   }
 };
-
-function convertMillisecondsToTimeBufferEnd(ms) {
-  const totalSeconds = Math.floor(ms / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  return { hours, minutes, seconds };
-}
