@@ -288,7 +288,8 @@ export const sendPassengerList = async (req, res) => {
         const boarded = boardedIds.has(pid);
         const missed = missedIds.has(pid);
 
-        const bufferEndPassed = ps.bufferEnd ? new Date(ps.bufferEnd) < nowIST : false;
+        // Only mark missed if bufferEnd passed and not boarded
+        const bufferEndPassed = ps.bufferEnd ? new Date(ps.bufferEnd) < nowIST && !boarded : false;
         if (bufferEndPassed) missedIds.add(pid);
 
         const normalizedDays = Array.isArray(ps.wfoDays)
@@ -297,7 +298,7 @@ export const sendPassengerList = async (req, res) => {
         const includeToday = normalizedDays.includes(today);
 
         const reason = bufferEndPassed
-          ? "removed (bufferEnd expired)"
+          ? "removed (bufferEnd expired & not boarded)"
           : missed
           ? "removed (already marked missed)"
           : !includeToday
@@ -378,3 +379,4 @@ export const sendPassengerList = async (req, res) => {
     });
   }
 };
+
