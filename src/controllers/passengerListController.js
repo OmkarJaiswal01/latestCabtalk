@@ -723,6 +723,184 @@ function toMinutesOfDayIST(value) {
 //       .json({ success: false, message: "Internal error", error: error.message });
 //   }
 // };
+// export const sendPassengerList = async (req, res) => {
+//   console.log("🚀 [START] sendPassengerList API called.");
+
+//   try {
+//     console.log("📥 [Step 0] Extracting phoneNumber from request...");
+//     const { phoneNumber } = req.body;
+
+//     if (!phoneNumber) {
+//       console.log("❌ [Step 0] No phoneNumber provided.");
+//       return res
+//         .status(400)
+//         .json({ success: false, message: "Phone number is required." });
+//     }
+//     console.log(`✅ [Step 0] Phone number received: ${phoneNumber}`);
+
+//     // Step 1: Find driver
+//     console.log("🔍 [Step 1] Looking up driver...");
+//     const driver = await Driver.findOne({ phoneNumber });
+
+//     if (!driver) {
+//       console.log("❌ [Step 1] Driver not found.");
+//       return res
+//         .status(404)
+//         .json({ success: false, message: "Driver not found." });
+//     }
+//     console.log(`✅ [Step 1] Driver found: ${driver._id}`);
+
+//     // Step 2: Find asset
+//     console.log("🔍 [Step 2] Looking up asset for driver...");
+//     const asset = await Asset.findOne({ driver: driver._id }).populate({
+//       path: "passengers.passengers.passenger",
+//       model: "Passenger",
+//       select: "Employee_Name Employee_PhoneNumber Employee_Address",
+//     });
+
+//     if (!asset) {
+//       console.log("❌ [Step 2] No asset assigned to driver.");
+//       return res
+//         .status(404)
+//         .json({ success: false, message: "No asset assigned to this driver." });
+//     }
+//     console.log(`✅ [Step 2] Asset found: ${asset._id}`);
+
+//     // Step 3: Find journey
+//     console.log("🔍 [Step 3] Looking up journey for driver...");
+//     const journey = await Journey.findOne({ Driver: driver._id });
+
+//     if (!journey) {
+//       console.log("❌ [Step 3] No journey record found.");
+//       return res
+//         .status(500)
+//         .json({ success: false, message: "Journey record missing." });
+//     }
+//     console.log(`✅ [Step 3] Journey found: ${journey._id}`);
+
+//     // Step 4: Get shift block
+//     console.log("📦 [Step 4] Extracting shift block...");
+//     const shiftBlock = asset.passengers.find(
+//       (b) => b.shift === journey.Journey_shift
+//     );
+
+//     if (!shiftBlock || !Array.isArray(shiftBlock.passengers)) {
+//       console.log("❌ [Step 4] No passengers assigned for this shift.");
+//       await sendWhatsAppMessage(phoneNumber, "No passengers assigned.");
+//       return res.json({
+//         success: true,
+//         message: "No passengers assigned.",
+//       });
+//     }
+//     console.log("✅ [Step 4] Shift block found with passengers.");
+
+//     // Step 5: Compute today's passengers
+//     console.log("📅 [Step 5] Calculating today's valid passengers...");
+//     const nowIST = new Date(
+//       new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
+//     );
+//     const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+//     const today = WEEK_DAYS[nowIST.getDay()];
+
+//     const boardedIds = new Set(
+//       (journey.boardedPassengers || []).map((bp) =>
+//         String(bp.passenger?._id || bp.passenger)
+//       )
+//     );
+
+//     const debug = [];
+//     const rows = (shiftBlock.passengers || [])
+//       .filter((ps, idx) => {
+//         if (!ps.passenger) return false;
+//         const pid = ps.passenger._id.toString();
+//         const boarded = boardedIds.has(pid);
+
+//         const normalizedDays = Array.isArray(ps.wfoDays)
+//           ? ps.wfoDays.map((d) => d.trim().slice(0, 3))
+//           : [];
+
+//         const includeToday = normalizedDays.includes(today);
+
+//         debug.push({
+//           idx,
+//           passengerId: pid,
+//           name: ps.passenger.Employee_Name,
+//           rawWfoDays: ps.wfoDays,
+//           normalizedDays,
+//           today,
+//           boarded,
+//           included: includeToday && !boarded,
+//           reason: !includeToday
+//             ? `today (${today}) not in wfoDays`
+//             : boarded
+//             ? "already boarded"
+//             : "included ✅",
+//         });
+
+//         return includeToday && !boarded;
+//       })
+//       .map((ps) => ({
+//         title: formatTitle(
+//           ps.passenger.Employee_Name || "Unknown",
+//           ps.passenger.Employee_PhoneNumber || "Unknown"
+//         ),
+//         description: `📍 ${ps.passenger.Employee_Address || "Address not set"}`,
+//       }));
+
+//     console.log(`✅ [Step 5] Passengers included today: ${rows.length}`);
+//     console.table(debug);
+
+//     if (rows.length === 0) {
+//       console.log("⚠️ [Step 5] No passengers available today.");
+//       await sendWhatsAppMessage(phoneNumber, "No passengers available today.");
+//       return res.json({
+//         success: true,
+//         message: "No passengers available today.",
+//         rows,
+//         debug,
+//       });
+//     }
+
+//     // Step 6: Send WhatsApp interactive list
+//     console.log("📲 [Step 6] Sending WhatsApp interactive passenger list...");
+//     const watiPayload = {
+//       header: "Ride Details",
+//       body: `Passenger list (${driver.vehicleNumber || "Unknown Vehicle"}):`,
+//       footer: "CabTalk",
+//       buttonText: "Menu",
+//       sections: [{ title: "Passenger Details", rows }],
+//     };
+
+//     const response = await axios.post(
+//       `https://live-mt-server.wati.io/388428/api/v1/sendInteractiveListMessage?whatsappNumber=${phoneNumber}`,
+//       watiPayload,
+//       {
+//         headers: {
+//           Authorization: `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI5MzAwNGExMi04OWZlLTQxN2MtODBiNy0zMTljMjY2ZjliNjUiLCJ1bmlxdWVfbmFtZSI6ImhhcmkudHJpcGF0aGlAZ3hpbmV0d29ya3MuY29tIiwibmFtZWlkIjoiaGFyaS50cmlwYXRoaUBneGluZXR3b3Jrcy5jb20iLCJlbWFpbCI6ImhhcmkudHJpcGF0aGlAZ3hpbmV0d29ya3MuY29tIiwiYXV0aF90aW1lIjoiMDIvMDEvMjAyNSAwODozNDo0MCIsInRlbmFudF9pZCI6IjM4ODQyOCIsImRiX25hbWUiOiJtdC1wcm9kLVRlbmFudHMiLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOiJBRE1JTklTVFJBVE9SIiwiZXhwIjoyNTM0MDIzMDA4MDAsImlzcyI6IkNsYXJlX0FJIiwiYXVkIjoiQ2xhcmVfQUkifQ.tvRl-g9OGF3kOq6FQ-PPdRtfVrr4BkfxrRKoHc7tbC0`,
+//           "Content-Type": "application/json-patch+json",
+//         },
+//       }
+//     );
+//     console.log("✅ [Step 6] Passenger list sent successfully via WhatsApp.");
+
+//     // Step 7: Return success response
+//     console.log("🎯 [Step 7] Returning response to client.");
+//     return res.json({
+//       success: true,
+//       message: "Passenger list sent via WhatsApp.",
+//       rows,
+//       debug,
+//       watiResponse: response.data,
+//     });
+//   } catch (error) {
+//     console.error("❌ [ERROR] sendPassengerList failed:", error);
+//     return res
+//       .status(500)
+//       .json({ success: false, message: "Internal error", error: error.message });
+//   }
+// };
+
+
 export const sendPassengerList = async (req, res) => {
   console.log("🚀 [START] sendPassengerList API called.");
 
@@ -821,6 +999,12 @@ export const sendPassengerList = async (req, res) => {
 
         const includeToday = normalizedDays.includes(today);
 
+        // 🔽🔽🔽 CHANGE: Added bufferEnd validation
+        const bufferEnd = ps.bufferEnd ? new Date(ps.bufferEnd) : null;
+        const bufferValid =
+          bufferEnd && !isNaN(bufferEnd.getTime()) ? bufferEnd > nowIST : true;
+        // 🔼🔼🔼 CHANGE END
+
         debug.push({
           idx,
           passengerId: pid,
@@ -829,15 +1013,21 @@ export const sendPassengerList = async (req, res) => {
           normalizedDays,
           today,
           boarded,
-          included: includeToday && !boarded,
+          bufferEnd,       // 🔽 Added for debug
+          bufferValid,     // 🔽 Added for debug
+          included: includeToday && !boarded && bufferValid, // 🔽 Now checks bufferValid too
           reason: !includeToday
             ? `today (${today}) not in wfoDays`
             : boarded
             ? "already boarded"
+            : !bufferValid
+            ? "bufferEnd passed" // 🔽 New exclusion reason
             : "included ✅",
         });
 
-        return includeToday && !boarded;
+        // 🔽🔽🔽 CHANGE: Now exclude passengers whose bufferEnd has passed
+        return includeToday && !boarded && bufferValid;
+        // 🔼🔼🔼 CHANGE END
       })
       .map((ps) => ({
         title: formatTitle(
