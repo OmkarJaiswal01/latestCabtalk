@@ -206,150 +206,6 @@ function toMinutesOfDayIST(value) {
 //   }
 // };
 
-//last
-
-// export const sendPassengerList = async (req, res) => {
-//   console.log("🚀 [START] sendPassengerList API called.");
-
-//   try {
-//     const { phoneNumber } = req.body;
-//     if (!phoneNumber) {
-//       return res.status(400).json({ success: false, message: "Phone number is required." });
-//     }
-
-//     // Step 1: Find driver
-//     const driver = await Driver.findOne({ phoneNumber });
-//     if (!driver) {
-//       return res.status(404).json({ success: false, message: "Driver not found." });
-//     }
-
-//     // Step 2: Find asset
-//     const asset = await Asset.findOne({ driver: driver._id }).populate({
-//       path: "passengers.passengers.passenger",
-//       model: "Passenger",
-//       select: "Employee_Name Employee_PhoneNumber Employee_Address",
-//     });
-//     if (!asset) {
-//       return res.status(404).json({ success: false, message: "No asset assigned to this driver." });
-//     }
-
-//     // Step 3: Find journey
-//     const journey = await Journey.findOne({ Driver: driver._id });
-//     if (!journey) {
-//       return res.status(500).json({ success: false, message: "Journey record missing." });
-//     }
-
-//     // Step 4: Get shift block
-//     const shiftBlock = asset.passengers.find(
-//       (b) => b.shift === journey.Journey_shift
-//     );
-//     if (!shiftBlock || !Array.isArray(shiftBlock.passengers)) {
-//       await sendWhatsAppMessage(phoneNumber, "No passengers assigned.");
-//       return res.json({ success: true, message: "No passengers assigned." });
-//     }
-
-//     // Step 5: Filter valid passengers
-//     const nowIST = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-//     const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-//     const today = WEEK_DAYS[nowIST.getDay()];
-
-//     const boardedIds = new Set(
-//       (journey.boardedPassengers || []).map((bp) =>
-//         String(bp.passenger?._id || bp.passenger)
-//       )
-//     );
-//     const missedIds = new Set(
-//       (journey.missedPassengers || []).map((mp) =>
-//         String(mp.passenger?._id || mp.passenger)
-//       )
-//     );
-
-//     const debug = [];
-//     const rows = (shiftBlock.passengers || [])
-//       .filter((ps, idx) => {
-//         if (!ps.passenger) return false;
-//         const pid = ps.passenger._id.toString();
-//         const boarded = boardedIds.has(pid);
-//         const missed = missedIds.has(pid);
-
-//         const normalizedDays = Array.isArray(ps.wfoDays)
-//           ? ps.wfoDays.map((d) => d.trim().slice(0, 3))
-//           : [];
-//         const includeToday = normalizedDays.includes(today);
-
-//         debug.push({
-//           idx,
-//           passengerId: pid,
-//           name: ps.passenger.Employee_Name,
-//           today,
-//           boarded,
-//           missed,
-//           included: includeToday && !boarded && !missed,
-//           reason: missed
-//             ? "removed (bufferEnd expired)"
-//             : !includeToday
-//             ? `today (${today}) not in wfoDays`
-//             : boarded
-//             ? "already boarded"
-//             : "included ✅",
-//         });
-
-//         return includeToday && !boarded && !missed;
-//       })
-//       .map((ps) => ({
-//         title: formatTitle(
-//           ps.passenger.Employee_Name || "Unknown",
-//           ps.passenger.Employee_PhoneNumber || "Unknown"
-//         ),
-//         description: `📍 ${ps.passenger.Employee_Address || "Address not set"}`,
-//       }));
-
-//     if (rows.length === 0) {
-//       await sendWhatsAppMessage(phoneNumber, "No passengers available today.");
-//       return res.json({
-//         success: true,
-//         message: "No passengers available today.",
-//         rows,
-//         debug,
-//       });
-//     }
-
-//     // Step 6: Send WhatsApp interactive list
-//     const watiPayload = {
-//       header: "Ride Details",
-//       body: `Passenger list (${driver.vehicleNumber || "Unknown Vehicle"}):`,
-//       footer: "CabTalk",
-//       buttonText: "Menu",
-//       sections: [{ title: "Passenger Details", rows }],
-//     };
-
-//     const response = await axios.post(
-//       `https://live-mt-server.wati.io/388428/api/v1/sendInteractiveListMessage?whatsappNumber=${phoneNumber}`,
-//       watiPayload,
-//       {
-//         headers: {
-//           Authorization: `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI5MzAwNGExMi04OWZlLTQxN2MtODBiNy0zMTljMjY2ZjliNjUiLCJ1bmlxdWVfbmFtZSI6ImhhcmkudHJpcGF0aGlAZ3hpbmV0d29ya3MuY29tIiwibmFtZWlkIjoiaGFyaS50cmlwYXRoaUBneGluZXR3b3Jrcy5jb20iLCJlbWFpbCI6ImhhcmkudHJpcGF0aGlAZ3hpbmV0d29ya3MuY29tIiwiYXV0aF90aW1lIjoiMDIvMDEvMjAyNSAwODozNDo0MCIsInRlbmFudF9pZCI6IjM4ODQyOCIsImRiX25hbWUiOiJtdC1wcm9kLVRlbmFudHMiLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOiJBRE1JTklTVFJBVE9SIiwiZXhwIjoyNTM0MDIzMDA4MDAsImlzcyI6IkNsYXJlX0FJIiwiYXVkIjoiQ2xhcmVfQUkifQ.tvRl-g9OGF3kOq6FQ-PPdRtfVrr4BkfxrRKoHc7tbC0`,
-//           "Content-Type": "application/json-patch+json",
-//         },
-//       }
-//     );
-
-//     return res.json({
-//       success: true,
-//       message: "Passenger list sent via WhatsApp.",
-//       rows,
-//       debug,
-//       watiResponse: response.data,
-//     });
-//   } catch (error) {
-//     console.error("❌ sendPassengerList failed:", error);
-//     return res.status(500).json({
-//       success: false,
-//       message: "Internal error",
-//       error: error.message,
-//     });
-//   }
-// };
 
 
 export const sendPassengerList = async (req, res) => {
@@ -361,11 +217,13 @@ export const sendPassengerList = async (req, res) => {
       return res.status(400).json({ success: false, message: "Phone number is required." });
     }
 
+    // Step 1: Find driver
     const driver = await Driver.findOne({ phoneNumber });
     if (!driver) {
       return res.status(404).json({ success: false, message: "Driver not found." });
     }
 
+    // Step 2: Find asset
     const asset = await Asset.findOne({ driver: driver._id }).populate({
       path: "passengers.passengers.passenger",
       model: "Passenger",
@@ -375,11 +233,13 @@ export const sendPassengerList = async (req, res) => {
       return res.status(404).json({ success: false, message: "No asset assigned to this driver." });
     }
 
+    // Step 3: Find journey
     const journey = await Journey.findOne({ Driver: driver._id });
     if (!journey) {
       return res.status(500).json({ success: false, message: "Journey record missing." });
     }
 
+    // Step 4: Get shift block
     const shiftBlock = asset.passengers.find(
       (b) => b.shift === journey.Journey_shift
     );
@@ -388,6 +248,7 @@ export const sendPassengerList = async (req, res) => {
       return res.json({ success: true, message: "No passengers assigned." });
     }
 
+    // Step 5: Filter valid passengers
     const nowIST = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
     const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     const today = WEEK_DAYS[nowIST.getDay()];
@@ -411,6 +272,12 @@ export const sendPassengerList = async (req, res) => {
         const boarded = boardedIds.has(pid);
         const missed = missedIds.has(pid);
 
+
+        // New: Check bufferEnd
+    const bufferEndPassed = ps.bufferEnd ? new Date(ps.bufferEnd) < nowIST : false;
+    if (bufferEndPassed) missedIds.add(pid); // mark as missed automatically
+
+
         const normalizedDays = Array.isArray(ps.wfoDays)
           ? ps.wfoDays.map((d) => d.trim().slice(0, 3))
           : [];
@@ -422,18 +289,21 @@ export const sendPassengerList = async (req, res) => {
           name: ps.passenger.Employee_Name,
           today,
           boarded,
-          missed,
-          included: includeToday && !boarded && !missed,
-          reason: missed
-            ? "removed (bufferEnd expired)"
-            : !includeToday
-            ? `today (${today}) not in wfoDays`
-            : boarded
-            ? "already boarded"
-            : "included ✅",
-        });
+          missed: missed || bufferEndPassed,
+          bufferEndPassed,
+          included: includeToday && !boarded && !missed && !bufferEndPassed,
+          reason: bufferEndPassed
+        ? "removed (bufferEnd expired)"
+        : missed
+        ? "removed (already marked missed)"
+        : !includeToday
+        ? `today (${today}) not in wfoDays`
+        : boarded
+        ? "already boarded"
+        : "included ✅",
+    });
 
-        return includeToday && !boarded && !missed;
+        return includeToday && !boarded && !missed && !bufferEndPassed;
       })
       .map((ps) => ({
         title: formatTitle(
@@ -453,6 +323,7 @@ export const sendPassengerList = async (req, res) => {
       });
     }
 
+    // Step 6: Send WhatsApp interactive list
     const watiPayload = {
       header: "Ride Details",
       body: `Passenger list (${driver.vehicleNumber || "Unknown Vehicle"}):`,

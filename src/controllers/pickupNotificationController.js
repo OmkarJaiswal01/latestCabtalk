@@ -9,210 +9,39 @@ import {sendWhatsAppMessage} from "../utils/whatsappHelper.js"
 
 
 
-//last
-
-// export const sendPickupConfirmation = async (req, res) => {
-//   console.log("🚀 [START] sendPickupConfirmation API called.");
-
-//   try {
-//     console.log("📥 [Step 0] Received pickup confirmation request...");
-
-//     const { pickedPassengerPhoneNumber } = req.body;
-//     console.log("➡️ [Step 0] Request body:", req.body);
-
-//     if (!pickedPassengerPhoneNumber) {
-//       console.log("❌ [Step 1] No pickedPassengerPhoneNumber in request.");
-//       return res.status(400).json({
-//         success: false,
-//         message: "pickedPassengerPhoneNumber is required.",
-//       });
-//     }
-//     console.log("✅ [Step 1] pickedPassengerPhoneNumber received.");
-
-//     const cleanedPhone = pickedPassengerPhoneNumber.replace(/\D/g, "");
-//     console.log(`📞 [Step 2] Cleaned passenger phone: ${cleanedPhone}`);
-
-//     if (!/^91\d{10}$/.test(cleanedPhone)) {
-//       console.log("❌ [Step 2] Invalid phone format.");
-//       return res.status(400).json({
-//         success: false,
-//         message: "Invalid Indian phone number format.",
-//       });
-//     }
-//     console.log("✅ [Step 2] Phone format valid.");
-
-//     console.log("🔍 [Step 3] Searching for matching asset...");
-//     const asset = await Asset.findOne({
-//       "passengers.passengers.passenger": { $exists: true },
-//     }).populate({
-//       path: "passengers.passengers.passenger",
-//       select: "Employee_PhoneNumber Employee_Name",
-//     });
-
-//     if (!asset) {
-//       console.log("❌ [Step 3] Asset not found.");
-//       return res.status(404).json({ success: false, message: "Asset not found." });
-//     }
-//     console.log("✅ [Step 3] Asset found:", asset._id);
-
-//     console.log("🔎 [Step 4] Looking for passenger in asset shifts...");
-//     let pickedPassenger = null;
-//     let currentShiftPassengers = [];
-
-//     for (const shift of asset.passengers) {
-//       const match = shift.passengers.find(
-//         (sp) =>
-//           sp.passenger?.Employee_PhoneNumber?.replace(/\D/g, "") === cleanedPhone
-//       );
-//       if (match) {
-//         pickedPassenger = match.passenger;
-//         currentShiftPassengers = shift.passengers;
-//         break;
-//       }
-//     }
-
-//     if (!pickedPassenger) {
-//       console.log("❌ [Step 4] Picked passenger not found in asset shifts.");
-//       return res.status(404).json({
-//         success: false,
-//         message: "Picked passenger not found in asset.",
-//       });
-//     }
-//     console.log(`✅ [Step 4] Found picked passenger: ${pickedPassenger.Employee_Name}`);
-
-//     console.log("📦 [Step 5] Fetching latest journey for asset...");
-//     const journey = await Journey.findOne({ Asset: asset._id })
-//       .sort({ createdAt: -1 })
-//       .populate({
-//         path: "boardedPassengers.passenger",
-//         select: "Employee_PhoneNumber Employee_Name",
-//       });
-
-//     if (!journey) {
-//       console.log("❌ [Step 5] Journey not found.");
-//       return res.status(404).json({ success: false, message: "No journey found for asset." });
-//     }
-//     console.log("✅ [Step 5] Journey found:", journey._id);
-
-//     console.log("🧾 [Step 6] Checking if passenger already boarded...");
-//     const alreadyBoarded = journey.boardedPassengers.some(
-//       (bp) =>
-//         (bp.passenger.Employee_PhoneNumber || "").replace(/\D/g, "") === cleanedPhone
-//     );
-
-//     if (alreadyBoarded) {
-//       console.log("✅ [Step 6] Passenger already boarded.");
-//       return res.status(400).json({ success: false, message: "Passenger already boarded." });
-//     }
-//     console.log("✅ [Step 6] Passenger not boarded yet.");
-
-//     console.log("🟢 [Step 7] Boarding passenger...");
-//     journey.boardedPassengers.push({ passenger: pickedPassenger._id });
-//     await journey.save();
-//     console.log("✅ [Step 7] Passenger boarded and journey updated.");
-
-//     console.log("📲 [Step 8] Sending confirmation message to picked passenger...");
-//     const confirmation = await sendPickupConfirmationMessage(
-//       pickedPassenger.Employee_PhoneNumber,
-//       pickedPassenger.Employee_Name
-//     );
-//     console.log("✅ [Step 8] Confirmation sent:", confirmation);
-
-//     const now = new Date();
-//     const boardedSet = new Set(
-//       journey.boardedPassengers
-//         .map((bp) => bp.passenger.Employee_PhoneNumber || "")
-//         .map((num) => num.replace(/\D/g, ""))
-//     );
-//     boardedSet.add(cleanedPhone);
-
-//     console.log("🔔 [Step 9] Notifying other passengers in the same shift...");
-//     const notifiedPassengers = [];
-
-//     for (const sp of currentShiftPassengers) {
-//       const p = sp.passenger;
-//       if (!p?.Employee_PhoneNumber) continue;
-
-//       const phoneClean = p.Employee_PhoneNumber.replace(/\D/g, "");
-
-//       if (boardedSet.has(phoneClean)) {
-//         console.log(`🚫 [Step 9] Skipping ${p.Employee_Name}: Already boarded.`);
-//         continue;
-//       }
-
-//       const bufferEndTime = sp.bufferEnd ? new Date(sp.bufferEnd) : null;
-
-//       if (!bufferEndTime || isNaN(bufferEndTime.getTime())) {
-//         console.warn(`⚠️ [Step 9] Skipping ${p.Employee_Name}: Invalid or missing bufferEnd.`);
-//         continue;
-//       }
-
-//       if (bufferEndTime <= now) {
-//         console.log(`⏱️ [Step 9] Skipping ${p.Employee_Name}: bufferEnd already passed.`);
-//         continue;
-//       }
-
-//       console.log(`📩 [Step 9] Sending update to ${p.Employee_Name}...`);
-//       const notify = await sendOtherPassengerSameShiftUpdateMessage(
-//         p.Employee_PhoneNumber,
-//         p.Employee_Name,
-//         pickedPassenger.Employee_Name
-//       );
-
-//       console.log(`✅ [Step 9] Notified ${p.Employee_Name}:`, notify);
-
-//       notifiedPassengers.push({
-//         name: p.Employee_Name,
-//         phone: p.Employee_PhoneNumber,
-//         success: notify.success,
-//         error: notify.error || null,
-//       });
-//     }
-
-//     console.log("✅ [Step 9] All eligible notifications sent.");
-
-//     console.log("🎉 [END] Pickup confirmation successful.");
-//     return res.status(200).json({
-//       success: true,
-//       message: "Confirmation sent to picked passenger; shift-mates updated.",
-//       pickedPassenger: {
-//         name: pickedPassenger.Employee_Name,
-//         phone: pickedPassenger.Employee_PhoneNumber,
-//         confirmation,
-//       },
-//       notifiedPassengers,
-//       boardedCount: journey.boardedPassengers.length,
-//     });
-//   } catch (err) {
-//     console.error("❌ [ERROR] sendPickupConfirmation:", err);
-//     console.log("💀 [END] Execution failed due to error.");
-//     return res
-//       .status(500)
-//       .json({ success: false, message: "Server error", error: err.message });
-//   }
-// };
 
 
 export const sendPickupConfirmation = async (req, res) => {
   console.log("🚀 [START] sendPickupConfirmation API called.");
 
   try {
+    console.log("📥 [Step 0] Received pickup confirmation request...");
+
     const { pickedPassengerPhoneNumber } = req.body;
+    console.log("➡️ [Step 0] Request body:", req.body);
+
     if (!pickedPassengerPhoneNumber) {
+      console.log("❌ [Step 1] No pickedPassengerPhoneNumber in request.");
       return res.status(400).json({
         success: false,
         message: "pickedPassengerPhoneNumber is required.",
       });
     }
+    console.log("✅ [Step 1] pickedPassengerPhoneNumber received.");
 
     const cleanedPhone = pickedPassengerPhoneNumber.replace(/\D/g, "");
+    console.log(`📞 [Step 2] Cleaned passenger phone: ${cleanedPhone}`);
+
     if (!/^91\d{10}$/.test(cleanedPhone)) {
+      console.log("❌ [Step 2] Invalid phone format.");
       return res.status(400).json({
         success: false,
         message: "Invalid Indian phone number format.",
       });
     }
+    console.log("✅ [Step 2] Phone format valid.");
 
+    console.log("🔍 [Step 3] Searching for matching asset...");
     const asset = await Asset.findOne({
       "passengers.passengers.passenger": { $exists: true },
     }).populate({
@@ -220,8 +49,13 @@ export const sendPickupConfirmation = async (req, res) => {
       select: "Employee_PhoneNumber Employee_Name",
     });
 
-    if (!asset) return res.status(404).json({ success: false, message: "Asset not found." });
+    if (!asset) {
+      console.log("❌ [Step 3] Asset not found.");
+      return res.status(404).json({ success: false, message: "Asset not found." });
+    }
+    console.log("✅ [Step 3] Asset found:", asset._id);
 
+    console.log("🔎 [Step 4] Looking for passenger in asset shifts...");
     let pickedPassenger = null;
     let currentShiftPassengers = [];
 
@@ -238,12 +72,15 @@ export const sendPickupConfirmation = async (req, res) => {
     }
 
     if (!pickedPassenger) {
+      console.log("❌ [Step 4] Picked passenger not found in asset shifts.");
       return res.status(404).json({
         success: false,
         message: "Picked passenger not found in asset.",
       });
     }
+    console.log(`✅ [Step 4] Found picked passenger: ${pickedPassenger.Employee_Name}`);
 
+    console.log("📦 [Step 5] Fetching latest journey for asset...");
     const journey = await Journey.findOne({ Asset: asset._id })
       .sort({ createdAt: -1 })
       .populate({
@@ -251,22 +88,35 @@ export const sendPickupConfirmation = async (req, res) => {
         select: "Employee_PhoneNumber Employee_Name",
       });
 
-    if (!journey) return res.status(404).json({ success: false, message: "No journey found for asset." });
+    if (!journey) {
+      console.log("❌ [Step 5] Journey not found.");
+      return res.status(404).json({ success: false, message: "No journey found for asset." });
+    }
+    console.log("✅ [Step 5] Journey found:", journey._id);
 
+    console.log("🧾 [Step 6] Checking if passenger already boarded...");
     const alreadyBoarded = journey.boardedPassengers.some(
       (bp) =>
         (bp.passenger.Employee_PhoneNumber || "").replace(/\D/g, "") === cleanedPhone
     );
 
-    if (alreadyBoarded) return res.status(400).json({ success: false, message: "Passenger already boarded." });
+    if (alreadyBoarded) {
+      console.log("✅ [Step 6] Passenger already boarded.");
+      return res.status(400).json({ success: false, message: "Passenger already boarded." });
+    }
+    console.log("✅ [Step 6] Passenger not boarded yet.");
 
+    console.log("🟢 [Step 7] Boarding passenger...");
     journey.boardedPassengers.push({ passenger: pickedPassenger._id });
     await journey.save();
+    console.log("✅ [Step 7] Passenger boarded and journey updated.");
 
+    console.log("📲 [Step 8] Sending confirmation message to picked passenger...");
     const confirmation = await sendPickupConfirmationMessage(
       pickedPassenger.Employee_PhoneNumber,
       pickedPassenger.Employee_Name
     );
+    console.log("✅ [Step 8] Confirmation sent:", confirmation);
 
     const now = new Date();
     const boardedSet = new Set(
@@ -276,33 +126,69 @@ export const sendPickupConfirmation = async (req, res) => {
     );
     boardedSet.add(cleanedPhone);
 
+    console.log("🔔 [Step 9] Notifying other passengers in the same shift...");
     const notifiedPassengers = [];
 
     for (const sp of currentShiftPassengers) {
-      const phoneNum = sp.passenger?.Employee_PhoneNumber?.replace(/\D/g, "");
-      if (phoneNum && !boardedSet.has(phoneNum)) {
-        await sendOtherPassengerSameShiftUpdateMessage(
-          sp.passenger.Employee_PhoneNumber,
-          sp.passenger.Employee_Name,
-          pickedPassenger.Employee_Name
-        );
-        notifiedPassengers.push(sp.passenger.Employee_Name);
+      const p = sp.passenger;
+      if (!p?.Employee_PhoneNumber) continue;
+
+      const phoneClean = p.Employee_PhoneNumber.replace(/\D/g, "");
+
+      if (boardedSet.has(phoneClean)) {
+        console.log(`🚫 [Step 9] Skipping ${p.Employee_Name}: Already boarded.`);
+        continue;
       }
+
+      const bufferEndTime = sp.bufferEnd ? new Date(sp.bufferEnd) : null;
+
+      if (!bufferEndTime || isNaN(bufferEndTime.getTime())) {
+        console.warn(`⚠️ [Step 9] Skipping ${p.Employee_Name}: Invalid or missing bufferEnd.`);
+        continue;
+      }
+
+      if (bufferEndTime <= now) {
+        console.log(`⏱️ [Step 9] Skipping ${p.Employee_Name}: bufferEnd already passed.`);
+        continue;
+      }
+
+      console.log(`📩 [Step 9] Sending update to ${p.Employee_Name}...`);
+      const notify = await sendOtherPassengerSameShiftUpdateMessage(
+        p.Employee_PhoneNumber,
+        p.Employee_Name,
+        pickedPassenger.Employee_Name
+      );
+
+      console.log(`✅ [Step 9] Notified ${p.Employee_Name}:`, notify);
+
+      notifiedPassengers.push({
+        name: p.Employee_Name,
+        phone: p.Employee_PhoneNumber,
+        success: notify.success,
+        error: notify.error || null,
+      });
     }
 
-    return res.json({
+    console.log("✅ [Step 9] All eligible notifications sent.");
+
+    console.log("🎉 [END] Pickup confirmation successful.");
+    return res.status(200).json({
       success: true,
-      message: `Pickup confirmed for ${pickedPassenger.Employee_Name}.`,
-      confirmation,
+      message: "Confirmation sent to picked passenger; shift-mates updated.",
+      pickedPassenger: {
+        name: pickedPassenger.Employee_Name,
+        phone: pickedPassenger.Employee_PhoneNumber,
+        confirmation,
+      },
       notifiedPassengers,
+      boardedCount: journey.boardedPassengers.length,
     });
-  } catch (error) {
-    console.error("❌ sendPickupConfirmation failed:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Internal server error",
-      error: error.message,
-    });
+  } catch (err) {
+    console.error("❌ [ERROR] sendPickupConfirmation:", err);
+    console.log("💀 [END] Execution failed due to error.");
+    return res
+      .status(500)
+      .json({ success: false, message: "Server error", error: err.message });
   }
 };
 
