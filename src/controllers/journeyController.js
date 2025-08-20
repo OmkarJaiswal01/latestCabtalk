@@ -10,7 +10,7 @@ import { sendDropConfirmationMessage } from "../utils/dropConfirmationMsg.js";
 import { startRideUpdatePassengerController } from "../utils/rideStartUpdatePassenger.js"; 
 import {schedulePickupNotification} from "../controllers/pickupNotificationController.js"
 import {scheduleBufferEndNotification} from "../controllers/pickupNotificationController.js"
-import {isPassengerWorkingToday} from "../utils/weekoffPassengerHelper.js"
+
 
 // export const createJourney = async (req, res) => {
 //   console.log("➡️ [START] createJourney triggered");
@@ -243,11 +243,6 @@ export const createJourney = async (req, res) => {
           const { passenger, bufferStart, bufferEnd } = shiftPassenger;
 
           if (!passenger) continue;
-
-           if (!isPassengerWorkingToday(shiftPassenger)) {
-            console.log(`⏩ Skipping ${passenger.Employee_Name} — not WFO today`);
-            continue;
-          }
 
           // 1. Schedule Pickup reminder at bufferStart (optional)
           if (bufferStart) {
