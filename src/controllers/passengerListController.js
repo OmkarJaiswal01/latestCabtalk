@@ -207,19 +207,23 @@ function toMinutesOfDayIST(value) {
 // };
 
 
-
 export const sendPassengerList = async (req, res) => {
   console.log("🚀 [START] sendPassengerList API called.");
 
   try {
     const { phoneNumber } = req.body;
+    console.log("Phone number received:", phoneNumber);
+
     if (!phoneNumber) {
+      console.log("❌ Phone number missing");
       return res.status(400).json({ success: false, message: "Phone number is required." });
     }
 
     // Step 1: Find driver
     const driver = await Driver.findOne({ phoneNumber });
+    console.log("Driver found:", driver);
     if (!driver) {
+      console.log("❌ Driver not found");
       return res.status(404).json({ success: false, message: "Driver not found." });
     }
 
@@ -229,13 +233,17 @@ export const sendPassengerList = async (req, res) => {
       model: "Passenger",
       select: "Employee_Name Employee_PhoneNumber Employee_Address",
     });
+    console.log("Asset found:", asset);
     if (!asset) {
+      console.log("❌ No asset assigned");
       return res.status(404).json({ success: false, message: "No asset assigned to this driver." });
     }
 
     // Step 3: Find journey
     const journey = await Journey.findOne({ Driver: driver._id });
+    console.log("Journey found:", journey);
     if (!journey) {
+      console.log("❌ Journey record missing");
       return res.status(500).json({ success: false, message: "Journey record missing." });
     }
 
@@ -243,7 +251,9 @@ export const sendPassengerList = async (req, res) => {
     const shiftBlock = asset.passengers.find(
       (b) => b.shift === journey.Journey_shift
     );
+    console.log("Shift block found:", shiftBlock);
     if (!shiftBlock || !Array.isArray(shiftBlock.passengers)) {
+      console.log("❌ No passengers in this shift block");
       await sendWhatsAppMessage(phoneNumber, "No passengers assigned.");
       return res.json({ success: true, message: "No passengers assigned." });
     }
@@ -252,36 +262,49 @@ export const sendPassengerList = async (req, res) => {
     const nowIST = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
     const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     const today = WEEK_DAYS[nowIST.getDay()];
+    console.log("Today:", today);
 
     const boardedIds = new Set(
       (journey.boardedPassengers || []).map((bp) =>
         String(bp.passenger?._id || bp.passenger)
       )
     );
+    console.log("Boarded IDs:", boardedIds);
+
     const missedIds = new Set(
       (journey.missedPassengers || []).map((mp) =>
         String(mp.passenger?._id || mp.passenger)
       )
     );
+    console.log("Missed IDs:", missedIds);
 
     const debug = [];
     const rows = (shiftBlock.passengers || [])
-      .filter((ps, idx) => {
-        if (!ps.passenger) return false;
+      .map((ps, idx) => {
+        console.log(`Checking passenger index ${idx}:`, ps.passenger);
+
+        if (!ps.passenger) return null;
         const pid = ps.passenger._id.toString();
         const boarded = boardedIds.has(pid);
         const missed = missedIds.has(pid);
 
-
-        // New: Check bufferEnd
-    const bufferEndPassed = ps.bufferEnd ? new Date(ps.bufferEnd) < nowIST : false;
-    if (bufferEndPassed) missedIds.add(pid); // mark as missed automatically
-
+        const bufferEndPassed = ps.bufferEnd ? new Date(ps.bufferEnd) < nowIST : false;
+        if (bufferEndPassed) missedIds.add(pid);
 
         const normalizedDays = Array.isArray(ps.wfoDays)
           ? ps.wfoDays.map((d) => d.trim().slice(0, 3))
           : [];
         const includeToday = normalizedDays.includes(today);
+
+        const reason = bufferEndPassed
+          ? "removed (bufferEnd expired)"
+          : missed
+          ? "removed (already marked missed)"
+          : !includeToday
+          ? `today (${today}) not in wfoDays`
+          : boarded
+          ? "already boarded"
+          : "included ✅";
 
         debug.push({
           idx,
@@ -292,26 +315,21 @@ export const sendPassengerList = async (req, res) => {
           missed: missed || bufferEndPassed,
           bufferEndPassed,
           included: includeToday && !boarded && !missed && !bufferEndPassed,
-          reason: bufferEndPassed
-        ? "removed (bufferEnd expired)"
-        : missed
-        ? "removed (already marked missed)"
-        : !includeToday
-        ? `today (${today}) not in wfoDays`
-        : boarded
-        ? "already boarded"
-        : "included ✅",
-    });
+          reason,
+        });
 
-        return includeToday && !boarded && !missed && !bufferEndPassed;
+        console.log(`Passenger ${ps.passenger.Employee_Name} reason:`, reason);
+
+        if (!includeToday || boarded || missed || bufferEndPassed) return null;
+
+        return {
+          title: `${ps.passenger.Employee_Name} | ${ps.passenger.Employee_PhoneNumber}`,
+          description: `📍 ${ps.passenger.Employee_Address || "Address not set"}`,
+        };
       })
-      .map((ps) => ({
-        title: formatTitle(
-          ps.passenger.Employee_Name || "Unknown",
-          ps.passenger.Employee_PhoneNumber || "Unknown"
-        ),
-        description: `📍 ${ps.passenger.Employee_Address || "Address not set"}`,
-      }));
+      .filter(Boolean);
+
+    console.log("Filtered rows:", rows);
 
     if (rows.length === 0) {
       await sendWhatsAppMessage(phoneNumber, "No passengers available today.");
@@ -323,6 +341,7 @@ export const sendPassengerList = async (req, res) => {
       });
     }
 
+    console.log("Sending WhatsApp interactive list...");
     // Step 6: Send WhatsApp interactive list
     const watiPayload = {
       header: "Ride Details",
@@ -337,7 +356,7 @@ export const sendPassengerList = async (req, res) => {
       watiPayload,
       {
         headers: {
-          Authorization: `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI5MzAwNGExMi04OWZlLTQxN2MtODBiNy0zMTljMjY2ZjliNjUiLCJ1bmlxdWVfbmFtZSI6ImhhcmkudHJpcGF0aGlAZ3hpbmV0d29ya3MuY29tIiwibmFtZWlkIjoiaGFyaS50cmlwYXRoaUBneGluZXR3b3Jrcy5jb20iLCJlbWFpbCI6ImhhcmkudHJpcGF0aGlAZ3hpbmV0d29ya3MuY29tIiwiYXV0aF90aW1lIjoiMDIvMDEvMjAyNSAwODozNDo0MCIsInRlbmFudF9pZCI6IjM4ODQyOCIsImRiX25hbWUiOiJtdC1wcm9kLVRlbmFudHMiLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOiJBRE1JTklTVFJBVE9SIiwiZXhwIjoyNTM0MDIzMDA4MDAsImlzcyI6IkNsYXJlX0FJIiwiYXVkIjoiQ2xhcmVfQUkifQ.tvRl-g9OGF3kOq6FQ-PPdRtfVrr4BkfxrRKoHc7tbC0`,
+          Authorization: `Bearer <YOUR_BEARER_TOKEN>`,
           "Content-Type": "application/json-patch+json",
         },
       }
