@@ -383,6 +383,7 @@
 
 
 // passengerListController.js
+// passengerListController.js
 import axios from "axios";
 import Driver from "../models/driverModel.js";
 import Asset from "../models/assetModel.js";
@@ -466,69 +467,74 @@ export const sendPassengerList = async (req, res) => {
     const debug = [];
     const newlyMissed = [];
 
-    const rows = (shiftBlock.passengers || []).map((ps, idx) => {
-      if (!ps.passenger) return null;
-      const pid = ps.passenger._id.toString();
+    const rows = (shiftBlock.passengers || [])
+      .map((ps, idx) => {
+        if (!ps.passenger) return null;
+        const pid = ps.passenger._id.toString();
 
-      const boarded = boardedIds.has(pid);
-      const missed = missedIds.has(pid);
+        const boarded = boardedIds.has(pid);
+        const missed = missedIds.has(pid);
 
-      // Check buffer expiry (UTC compare)
-      const bufferEndPassed = ps.bufferEnd && new Date(ps.bufferEnd).getTime() < nowUTC.getTime() && !boarded;
-      if (bufferEndPassed && !missed) {
-        missedIds.add(pid);
-        newlyMissed.push(pid); // mark for DB update
-      }
+        // Check buffer expiry (UTC compare)
+        const bufferEndPassed = ps.bufferEnd && new Date(ps.bufferEnd).getTime() < nowUTC.getTime() && !boarded;
+        if (bufferEndPassed && !missed) {
+          missedIds.add(pid);
+          newlyMissed.push(pid); // mark for DB update
+        }
 
-      const normalizedDays = Array.isArray(ps.wfoDays)
-        ? ps.wfoDays.map((d) => d.trim().slice(0, 3))
-        : [];
-      const includeToday = normalizedDays.includes(today);
+        const normalizedDays = Array.isArray(ps.wfoDays)
+          ? ps.wfoDays.map((d) => d.trim().slice(0, 3))
+          : [];
+        const includeToday = normalizedDays.includes(today);
 
-      const included = includeToday && !boarded && !missed && !bufferEndPassed;
+        const included = includeToday && !boarded && !missed && !bufferEndPassed;
 
-      const reason = bufferEndPassed
-        ? "⛔ bufferEnd expired"
-        : missed
-        ? "⛔ already missed"
-        : boarded
-        ? "✅ already boarded"
-        : !includeToday
-        ? `❌ not scheduled today (${today})`
-        : "✅ included";
+        const reason = bufferEndPassed
+          ? "⛔ bufferEnd expired"
+          : missed
+          ? "⛔ already missed"
+          : boarded
+          ? "✅ already boarded"
+          : !includeToday
+          ? `❌ not scheduled today (${today})`
+          : "✅ included";
 
-      debug.push({
-        idx,
-        passengerId: pid,
-        name: ps.passenger.Employee_Name,
-        boarded,
-        missed: missed || bufferEndPassed,
-        bufferEndPassed,
-        includeToday,
-        included,
-        reason,
-        bufferStartUTC: ps.bufferStart,
-        bufferEndUTC: ps.bufferEnd,
-        bufferStartIST: toISTString(ps.bufferStart),
-        bufferEndIST: toISTString(ps.bufferEnd),
-      });
+        debug.push({
+          idx,
+          passengerId: pid,
+          name: ps.passenger.Employee_Name,
+          boarded,
+          missed: missed || bufferEndPassed,
+          bufferEndPassed,
+          includeToday,
+          included,
+          reason,
+          bufferStartUTC: ps.bufferStart,
+          bufferEndUTC: ps.bufferEnd,
+          bufferStartIST: toISTString(ps.bufferStart),
+          bufferEndIST: toISTString(ps.bufferEnd),
+        });
 
-      console.log(`   Passenger ${ps.passenger.Employee_Name} (${pid}): ${reason}`);
+        console.log(`   Passenger ${ps.passenger.Employee_Name} (${pid}): ${reason}`);
 
-      if (!included) return null;
+        if (!included) return null;
 
-      return {
-        title: formatTitle(ps.passenger.Employee_Name, ps.passenger.Employee_PhoneNumber),
-        description: `📍 ${ps.passenger.Employee_Address || "Address not set"}\n⏰ Buffer: ${toISTString(ps.bufferStart)} → ${toISTString(ps.bufferEnd)}`,
-      };
-    }).filter(Boolean);
+        return {
+          id: pid, // ✅ WhatsApp requires unique ID
+          title: formatTitle(ps.passenger.Employee_Name, ps.passenger.Employee_PhoneNumber),
+          description: `📍 ${ps.passenger.Employee_Address || "Address not set"}\n⏰ Buffer: ${toISTString(
+            ps.bufferStart
+          )} → ${toISTString(ps.bufferEnd)}`,
+        };
+      })
+      .filter(Boolean);
 
     // Step 7: Update DB if new missed passengers
     if (newlyMissed.length > 0) {
       console.log("👉 Step 7: Updating Journey.missedPassengers with =", newlyMissed);
       await Journey.updateOne(
         { _id: journey._id },
-        { $addToSet: { missedPassengers: { $each: newlyMissed.map(pid => ({ passenger: pid })) } } }
+        { $addToSet: { missedPassengers: { $each: newlyMissed.map((pid) => ({ passenger: pid })) } } }
       );
     }
 
@@ -540,12 +546,20 @@ export const sendPassengerList = async (req, res) => {
       return res.json({ success: true, message: "No passengers available today.", rows, debug });
     }
 
+    // ✅ Correct interactive list payload
     const watiPayload = {
-      header: "Ride Details",
-      body: `Passenger list (${driver.vehicleNumber || "Unknown Vehicle"}):`,
-      footer: "CabTalk",
-      buttonText: "Menu",
-      sections: [{ title: "Passenger Details", rows }],
+      header: { type: "text", text: "Ride Details" },
+      body: { text: `Passenger list (${driver.vehicleNumber || "Unknown Vehicle"}):` },
+      footer: { text: "CabTalk" },
+      action: {
+        button: "Menu",
+        sections: [
+          {
+            title: "Passenger Details",
+            rows: rows,
+          },
+        ],
+      },
     };
 
     console.log("👉 Step 9: Sending WhatsApp interactive list...");
@@ -554,20 +568,22 @@ export const sendPassengerList = async (req, res) => {
       watiPayload,
       {
         headers: {
-          Authorization: `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI5MzAwNGExMi04OWZlLTQxN2MtODBiNy0zMTljMjY2ZjliNjUiLCJ1bmlxdWVfbmFtZSI6ImhhcmkudHJpcGF0aGlAZ3hpbmV0d29ya3MuY29tIiwibmFtZWlkIjoiaGFyaS50cmlwYXRoaUBneGluZXR3b3Jrcy5jb20iLCJlbWFpbCI6ImhhcmkudHJpcGF0aGlAZ3hpbmV0d29ya3MuY29tIiwiYXV0aF90aW1lIjoiMDIvMDEvMjAyNSAwODozNDo0MCIsInRlbmFudF9pZCI6IjM4ODQyOCIsImRiX25hbWUiOiJtdC1wcm9kLVRlbmFudHMiLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOiJBRE1JTklTVFJBVE9SIiwiZXhwIjoyNTM0MDIzMDA4MDAsImlzcyI6IkNsYXJlX0FJIiwiYXVkIjoiQ2xhcmVfQUkifQ.tvRl-g9OGF3kOq6FQ-PPdRtfVrr4BkfxrRKoHc7tbC0`,
-          "Content-Type": "application/json-patch+json",
+          Authorization: `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI5MzAwNGExMi04OWZlLTQxN2MtODBiNy0zMTljMjY2ZjliNjUiLCJ1bmlxdWVfbmFtZSI6ImhhcmkudHJpcGF0aGlAZ3hpbmV0d29ya3MuY29tIiwibmFtZWlkIjoiaGFyaS50cmlwYXRoaUBneGluZXR3b3Jrcy5jb20iLCJlbWFpbCI6ImhhcmkudHJpcGF0aGlAZ3hpbmV0d29ya3MuY29tIiwiYXV0aF90aW1lIjoiMDIvMDEvMjAyNSAwODozNDo0MCIsInRlbmFudF9pZCI6IjM4ODQyOCIsImRiX25hbWUiOiJtdC1wcm9kLVRlbmFudHMiLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOiJBRE1JTklTVFJBVE9SIiwiZXhwIjoyNTM0MDIzMDA4MDAsImlzcyI6IkNsYXJlX0FJIiwiYXVkIjoiQ2xhcmVfQUkifQ.tvRl-g9OGF3kOq6FQ-PPdRtfVrr4BkfxrRKoHc7tbC0`, // 👈 replace with env var
+          "Content-Type": "application/json", // ✅ FIXED
         },
       }
     );
 
     console.log("✅ Step 10: WhatsApp sent successfully.");
-    // return res.json({ success: true, message: "Passenger list sent via WhatsApp.", rows, debug, watiResponse: response.data });
-    return res.status(200).json({success: true,
+    return res.status(200).json({
+      success: true,
       message: "Passenger list sent successfully via WhatsApp.",
-      data: response.data})
-
+      data: response.data,
+      rows,
+      debug,
+    });
   } catch (error) {
-    console.error("❌ sendPassengerList failed:", error);
+    console.error("❌ sendPassengerList failed:", error.response?.data || error.message);
     return res.status(500).json({ success: false, message: "Internal error", error: error.message });
   }
 };
