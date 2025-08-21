@@ -400,14 +400,10 @@ function formatTitle(name, phoneNumber) {
   return title;
 }
 
-function toMinutesOfDayIST(value) {
-  if (!value) return null;
-  const d = new Date(value);
-  if (isNaN(d.getTime())) return null;
-  const dIST = new Date(
-    d.toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
-  );
-  return dIST.getHours() * 60 + dIST.getMinutes();
+// ✅ Convert UTC date to IST string for WhatsApp display
+function toISTString(date) {
+  if (!date) return "";
+  return new Date(date).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
 }
 
 export const sendPassengerList = async (req, res) => {
@@ -469,12 +465,10 @@ export const sendPassengerList = async (req, res) => {
       return res.json({ success: true, message: "No passengers assigned." });
     }
 
-    // ✅ Step 5: Filter valid passengers
-    const nowIST = new Date(
-      new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
-    );
+    // ✅ Step 5: Use UTC for filtering
+    const nowUTC = new Date();
     const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    const today = WEEK_DAYS[nowIST.getDay()];
+    const today = WEEK_DAYS[nowUTC.getDay()];
     console.log("Today:", today);
 
     const boardedIds = new Set(
@@ -501,10 +495,10 @@ export const sendPassengerList = async (req, res) => {
         const boarded = boardedIds.has(pid);
         const missed = missedIds.has(pid);
 
-        // ✅ Passenger should disappear if bufferEnd expired and not boarded
+        // ✅ Compare in UTC
         const bufferEndPassed =
           ps.bufferEnd &&
-          new Date(ps.bufferEnd).getTime() < nowIST.getTime() &&
+          new Date(ps.bufferEnd).getTime() < nowUTC.getTime() &&
           !boarded;
 
         if (bufferEndPassed) missedIds.add(pid);
@@ -536,6 +530,8 @@ export const sendPassengerList = async (req, res) => {
           bufferEndPassed,
           included,
           reason,
+          bufferStartIST: ps.bufferStart ? toISTString(ps.bufferStart) : null,
+          bufferEndIST: ps.bufferEnd ? toISTString(ps.bufferEnd) : null,
         });
 
         console.log(`Passenger ${ps.passenger.Employee_Name} reason:`, reason);
@@ -544,7 +540,9 @@ export const sendPassengerList = async (req, res) => {
 
         return {
           title: `${ps.passenger.Employee_Name} | ${ps.passenger.Employee_PhoneNumber}`,
-          description: `📍 ${ps.passenger.Employee_Address || "Address not set"}`,
+          description: `📍 ${ps.passenger.Employee_Address || "Address not set"}\n⏰ Buffer: ${toISTString(
+            ps.bufferStart
+          )} → ${toISTString(ps.bufferEnd)}`,
         };
       })
       .filter(Boolean);
