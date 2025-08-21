@@ -389,6 +389,7 @@ import Asset from "../models/assetModel.js";
 import Journey from "../models/JourneyModel.js";
 import { sendWhatsAppMessage } from "../utils/whatsappHelper.js";
 
+// Utility: format passenger title
 function formatTitle(name, phoneNumber) {
   const MAX = 24;
   const SEP = " 📞 ";
@@ -400,7 +401,7 @@ function formatTitle(name, phoneNumber) {
   return title;
 }
 
-// ✅ Convert UTC date to IST string for WhatsApp display
+// Utility: UTC → IST string (for display/logs only)
 function toISTString(date) {
   if (!date) return "";
   return new Date(date).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
@@ -411,156 +412,134 @@ export const sendPassengerList = async (req, res) => {
 
   try {
     const { phoneNumber } = req.body;
-    console.log("Phone number received:", phoneNumber);
+    console.log("👉 Step 1: Input phoneNumber =", phoneNumber);
 
     if (!phoneNumber) {
       console.log("❌ Phone number missing");
-      return res
-        .status(400)
-        .json({ success: false, message: "Phone number is required." });
+      return res.status(400).json({ success: false, message: "Phone number is required." });
     }
 
-    // Step 1: Find driver
+    // Step 2: Find driver
     const driver = await Driver.findOne({ phoneNumber });
-    console.log("Driver found:", driver);
+    console.log("👉 Step 2: Driver found =", driver?._id || "❌ none");
     if (!driver) {
-      console.log("❌ Driver not found");
-      return res
-        .status(404)
-        .json({ success: false, message: "Driver not found." });
+      return res.status(404).json({ success: false, message: "Driver not found." });
     }
 
-    // Step 2: Find asset
+    // Step 3: Find asset
     const asset = await Asset.findOne({ driver: driver._id }).populate({
       path: "passengers.passengers.passenger",
       model: "Passenger",
       select: "Employee_Name Employee_PhoneNumber Employee_Address",
     });
-    console.log("Asset found:", asset);
+    console.log("👉 Step 3: Asset found =", asset?._id || "❌ none");
     if (!asset) {
-      console.log("❌ No asset assigned");
-      return res
-        .status(404)
-        .json({ success: false, message: "No asset assigned to this driver." });
+      return res.status(404).json({ success: false, message: "No asset assigned to this driver." });
     }
 
-    // Step 3: Find journey
+    // Step 4: Find journey
     const journey = await Journey.findOne({ Driver: driver._id });
-    console.log("Journey found:", journey);
+    console.log("👉 Step 4: Journey found =", journey?._id || "❌ none");
     if (!journey) {
-      console.log("❌ Journey record missing");
-      return res
-        .status(500)
-        .json({ success: false, message: "Journey record missing." });
+      return res.status(500).json({ success: false, message: "Journey record missing." });
     }
 
-    // Step 4: Get shift block
-    const shiftBlock = asset.passengers.find(
-      (b) => b.shift === journey.Journey_shift
-    );
-    console.log("Shift block found:", shiftBlock);
+    // Step 5: Get shift block
+    const shiftBlock = asset.passengers.find((b) => b.shift === journey.Journey_shift);
+    console.log("👉 Step 5: ShiftBlock =", shiftBlock ? "✅ found" : "❌ not found");
     if (!shiftBlock || !Array.isArray(shiftBlock.passengers)) {
-      console.log("❌ No passengers in this shift block");
       await sendWhatsAppMessage(phoneNumber, "No passengers assigned.");
       return res.json({ success: true, message: "No passengers assigned." });
     }
 
-    // ✅ Step 5: Use UTC for filtering
+    // Step 6: Filtering logic (UTC)
     const nowUTC = new Date();
     const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     const today = WEEK_DAYS[nowUTC.getDay()];
-    console.log("Today:", today);
+    console.log("👉 Step 6: Today (UTC) =", today, "Current UTC =", nowUTC.toISOString());
 
-    const boardedIds = new Set(
-      (journey.boardedPassengers || []).map((bp) =>
-        String(bp.passenger?._id || bp.passenger)
-      )
-    );
-    console.log("Boarded IDs:", boardedIds);
-
-    const missedIds = new Set(
-      (journey.missedPassengers || []).map((mp) =>
-        String(mp.passenger?._id || mp.passenger)
-      )
-    );
-    console.log("Missed IDs:", missedIds);
+    const boardedIds = new Set((journey.boardedPassengers || []).map((bp) => String(bp.passenger?._id || bp.passenger)));
+    const missedIds = new Set((journey.missedPassengers || []).map((mp) => String(mp.passenger?._id || mp.passenger)));
+    console.log("   Boarded IDs =", [...boardedIds]);
+    console.log("   Missed IDs =", [...missedIds]);
 
     const debug = [];
-    const rows = (shiftBlock.passengers || [])
-      .map((ps, idx) => {
-        console.log(`Checking passenger index ${idx}:`, ps.passenger);
+    const newlyMissed = [];
 
-        if (!ps.passenger) return null;
-        const pid = ps.passenger._id.toString();
-        const boarded = boardedIds.has(pid);
-        const missed = missedIds.has(pid);
+    const rows = (shiftBlock.passengers || []).map((ps, idx) => {
+      if (!ps.passenger) return null;
+      const pid = ps.passenger._id.toString();
 
-        // ✅ Compare in UTC
-        const bufferEndPassed =
-          ps.bufferEnd &&
-          new Date(ps.bufferEnd).getTime() < nowUTC.getTime() &&
-          !boarded;
+      const boarded = boardedIds.has(pid);
+      const missed = missedIds.has(pid);
 
-        if (bufferEndPassed) missedIds.add(pid);
+      // Check buffer expiry (UTC compare)
+      const bufferEndPassed = ps.bufferEnd && new Date(ps.bufferEnd).getTime() < nowUTC.getTime() && !boarded;
+      if (bufferEndPassed && !missed) {
+        missedIds.add(pid);
+        newlyMissed.push(pid); // mark for DB update
+      }
 
-        const normalizedDays = Array.isArray(ps.wfoDays)
-          ? ps.wfoDays.map((d) => d.trim().slice(0, 3))
-          : [];
-        const includeToday = normalizedDays.includes(today);
+      const normalizedDays = Array.isArray(ps.wfoDays)
+        ? ps.wfoDays.map((d) => d.trim().slice(0, 3))
+        : [];
+      const includeToday = normalizedDays.includes(today);
 
-        const included = includeToday && !boarded && !missed && !bufferEndPassed;
+      const included = includeToday && !boarded && !missed && !bufferEndPassed;
 
-        const reason = bufferEndPassed
-          ? "removed (bufferEnd expired & not boarded)"
-          : missed
-          ? "removed (already marked missed)"
-          : !includeToday
-          ? `today (${today}) not in wfoDays`
-          : boarded
-          ? "already boarded"
-          : "included ✅";
+      const reason = bufferEndPassed
+        ? "⛔ bufferEnd expired"
+        : missed
+        ? "⛔ already missed"
+        : boarded
+        ? "✅ already boarded"
+        : !includeToday
+        ? `❌ not scheduled today (${today})`
+        : "✅ included";
 
-        debug.push({
-          idx,
-          passengerId: pid,
-          name: ps.passenger.Employee_Name,
-          today,
-          boarded,
-          missed: missed || bufferEndPassed,
-          bufferEndPassed,
-          included,
-          reason,
-          bufferStartIST: ps.bufferStart ? toISTString(ps.bufferStart) : null,
-          bufferEndIST: ps.bufferEnd ? toISTString(ps.bufferEnd) : null,
-        });
-
-        console.log(`Passenger ${ps.passenger.Employee_Name} reason:`, reason);
-
-        if (!included) return null;
-
-        return {
-          title: `${ps.passenger.Employee_Name} | ${ps.passenger.Employee_PhoneNumber}`,
-          description: `📍 ${ps.passenger.Employee_Address || "Address not set"}\n⏰ Buffer: ${toISTString(
-            ps.bufferStart
-          )} → ${toISTString(ps.bufferEnd)}`,
-        };
-      })
-      .filter(Boolean);
-
-    console.log("Filtered rows:", rows);
-
-    if (rows.length === 0) {
-      await sendWhatsAppMessage(phoneNumber, "No passengers available today.");
-      return res.json({
-        success: true,
-        message: "No passengers available today.",
-        rows,
-        debug,
+      debug.push({
+        idx,
+        passengerId: pid,
+        name: ps.passenger.Employee_Name,
+        boarded,
+        missed: missed || bufferEndPassed,
+        bufferEndPassed,
+        includeToday,
+        included,
+        reason,
+        bufferStartUTC: ps.bufferStart,
+        bufferEndUTC: ps.bufferEnd,
+        bufferStartIST: toISTString(ps.bufferStart),
+        bufferEndIST: toISTString(ps.bufferEnd),
       });
+
+      console.log(`   Passenger ${ps.passenger.Employee_Name} (${pid}): ${reason}`);
+
+      if (!included) return null;
+
+      return {
+        title: formatTitle(ps.passenger.Employee_Name, ps.passenger.Employee_PhoneNumber),
+        description: `📍 ${ps.passenger.Employee_Address || "Address not set"}\n⏰ Buffer: ${toISTString(ps.bufferStart)} → ${toISTString(ps.bufferEnd)}`,
+      };
+    }).filter(Boolean);
+
+    // Step 7: Update DB if new missed passengers
+    if (newlyMissed.length > 0) {
+      console.log("👉 Step 7: Updating Journey.missedPassengers with =", newlyMissed);
+      await Journey.updateOne(
+        { _id: journey._id },
+        { $addToSet: { missedPassengers: { $each: newlyMissed.map(pid => ({ passenger: pid })) } } }
+      );
     }
 
-    console.log("Sending WhatsApp interactive list...");
-    // Step 6: Send WhatsApp interactive list
+    console.log("👉 Step 8: Final filtered rows =", rows.length);
+
+    // Step 9: Send WhatsApp message
+    if (rows.length === 0) {
+      await sendWhatsAppMessage(phoneNumber, "No passengers available today.");
+      return res.json({ success: true, message: "No passengers available today.", rows, debug });
+    }
+
     const watiPayload = {
       header: "Ride Details",
       body: `Passenger list (${driver.vehicleNumber || "Unknown Vehicle"}):`,
@@ -569,6 +548,7 @@ export const sendPassengerList = async (req, res) => {
       sections: [{ title: "Passenger Details", rows }],
     };
 
+    console.log("👉 Step 9: Sending WhatsApp interactive list...");
     const response = await axios.post(
       `https://live-mt-server.wati.io/388428/api/v1/sendInteractiveListMessage?whatsappNumber=${phoneNumber}`,
       watiPayload,
@@ -580,19 +560,11 @@ export const sendPassengerList = async (req, res) => {
       }
     );
 
-    return res.json({
-      success: true,
-      message: "Passenger list sent via WhatsApp.",
-      rows,
-      debug,
-      watiResponse: response.data,
-    });
+    console.log("✅ Step 10: WhatsApp sent successfully.");
+    return res.json({ success: true, message: "Passenger list sent via WhatsApp.", rows, debug, watiResponse: response.data });
+
   } catch (error) {
     console.error("❌ sendPassengerList failed:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Internal error",
-      error: error.message,
-    });
+    return res.status(500).json({ success: false, message: "Internal error", error: error.message });
   }
 };
