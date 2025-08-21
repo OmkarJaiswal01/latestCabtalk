@@ -12,7 +12,6 @@ import {schedulePickupNotification} from "../controllers/pickupNotificationContr
 import {scheduleBufferEndNotification} from "../controllers/pickupNotificationController.js"
 
 
-
 export const createJourney = async (req, res) => {
   console.log("➡️ [Step 0] [START] createJourney triggered");
   console.log("📦 [Step 0] Request Body:", JSON.stringify(req.body, null, 2));
@@ -88,7 +87,7 @@ export const createJourney = async (req, res) => {
       const today = WEEK_DAYS[nowUTC.getDay()];
       console.log("📆 [Step 7] Today (UTC):", today);
 
-       const todaysPassengers = [];
+      const todaysPassengers = [];
 
       for (const shift of asset.passengers) {
         if (shift.shift !== Journey_shift) continue;
@@ -109,12 +108,11 @@ export const createJourney = async (req, res) => {
           }
 
           // Keep only scheduled passengers for app updates
-   todaysPassengers.push({
-  id: passenger._id,
-  name: passenger.Employee_Name,
-  phone: passenger.Employee_PhoneNumber,
-});
-
+          todaysPassengers.push({
+            id: passenger._id,
+            name: passenger.Employee_Name,
+            phone: passenger.Employee_PhoneNumber,
+          });
 
           // ✅ Schedule pickup reminder (UTC already in DB)
           if (bufferStart) {
@@ -124,7 +122,10 @@ export const createJourney = async (req, res) => {
                 `🟢 Pickup reminder scheduled for ${passenger.Employee_Name} at ${bufferStart}`
               );
             } catch (err) {
-              console.error(`❌ Pickup scheduling failed for ${passenger.Employee_Name}:`, err.message);
+              console.error(
+                `❌ Pickup scheduling failed for ${passenger.Employee_Name}:`,
+                err.message
+              );
             }
           }
 
@@ -136,23 +137,37 @@ export const createJourney = async (req, res) => {
                 `🕒 Missed-boarding check scheduled for ${passenger.Employee_Name} at ${bufferEnd}`
               );
             } catch (err) {
-              console.error(`❌ BufferEnd scheduling failed for ${passenger.Employee_Name}:`, err.message);
+              console.error(
+                `❌ BufferEnd scheduling failed for ${passenger.Employee_Name}:`,
+                err.message
+              );
             }
           }
         }
       }
 
-      // 7c: Notify passenger app
+      // 7c: Notify passenger app only if passengers are scheduled today
       try {
-        const mockReq = { body: { vehicleNumber, Journey_shift } };
-        const mockRes = {
-          status: (code) => ({
-            json: (data) => console.log(`🟢 Passenger app notified [${code}]`, data),
-          }),
-        };
-        await startRideUpdatePassengerController(mockReq, mockRes);
-        await sendOtherPassengerSameShiftUpdateMessage(Journey_shift, asset._id);
-        console.log("✅ [Step 7c/7d] Passenger app + shift passengers notified");
+        if (todaysPassengers.length > 0) {
+          console.log(
+            `📢 [Step 7c] ${todaysPassengers.length} passengers scheduled today. Sending updates...`
+          );
+
+          const mockReq = { body: { vehicleNumber, Journey_shift } };
+          const mockRes = {
+            status: (code) => ({
+              json: (data) =>
+                console.log(`🟢 Passenger app notified [${code}]`, data),
+            }),
+          };
+
+          await startRideUpdatePassengerController(mockReq, mockRes);
+          await sendOtherPassengerSameShiftUpdateMessage(Journey_shift, asset._id);
+
+          console.log("✅ [Step 7c/7d] Passenger app + shift passengers notified");
+        } else {
+          console.log("⛔ [Step 7c] No passengers scheduled today. Skipping updates.");
+        }
       } catch (err) {
         console.error("🚨 [Step 7c/7d] Passenger notifications failed:", err.message);
       }
@@ -176,6 +191,7 @@ export const createJourney = async (req, res) => {
     return res.status(500).json({ message: "Server error", error: error.message });
   }
 };
+
 
 
 
