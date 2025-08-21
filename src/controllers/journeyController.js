@@ -88,6 +88,8 @@ export const createJourney = async (req, res) => {
       const today = WEEK_DAYS[nowUTC.getDay()];
       console.log("📆 [Step 7] Today (UTC):", today);
 
+       const todaysPassengers = [];
+
       for (const shift of asset.passengers) {
         if (shift.shift !== Journey_shift) continue;
 
@@ -105,6 +107,14 @@ export const createJourney = async (req, res) => {
             );
             continue;
           }
+
+          // Keep only scheduled passengers for app updates
+   todaysPassengers.push({
+  id: passenger._id,
+  name: passenger.Employee_Name,
+  phone: passenger.Employee_PhoneNumber,
+});
+
 
           // ✅ Schedule pickup reminder (UTC already in DB)
           if (bufferStart) {
