@@ -13,6 +13,9 @@ export async function sendPickupConfirmationMessage(phoneNumber, passengerName) 
     throw new Error("Invalid Indian phone number format");
   }
 
+  const [firstRaw] = String(passengerName).trim().split(/\s+/);
+  const firstName = firstRaw || passengerName;
+
   const url = `${WATI_BASE}/sendTemplateMessage?whatsappNumber=${cleanPhone}`;
   const payload = {
     template_name: "picked_up_passenger_update",
@@ -20,7 +23,7 @@ export async function sendPickupConfirmationMessage(phoneNumber, passengerName) 
     parameters: [
       {
         name: "name",
-        value: passengerName,
+        value: firstName,
       },
     ],
   };
@@ -40,7 +43,6 @@ export async function sendPickupConfirmationMessage(phoneNumber, passengerName) 
       data: response.data,
     };
   } catch (err) {
-    console.error("WATI error:", err.response?.data || err.message);
     return {
       success: false,
       error: err.response?.data || err.message,
