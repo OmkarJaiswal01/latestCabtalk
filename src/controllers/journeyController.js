@@ -284,9 +284,9 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
       // schedule buffer end notification for this passenger
       const shiftData = thisShift.passengers.find((p) => p.passenger._id.equals(passenger._id));
       const bufferEnd = shiftData?.bufferEnd;
-      if (bufferEnd) {
-        await scheduleBufferEndNotification(passenger, bufferEnd);
-      }
+      // if (bufferEnd) {
+      //   await scheduleBufferEndNotification(passenger, bufferEnd);
+      // }
     }
 
     if (jt === "drop") {
