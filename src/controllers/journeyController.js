@@ -106,6 +106,8 @@ export const createJourney = async (req, res) => {
  const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
       const today = WEEK_DAYS[new Date().getDay()];
 
+      let todaysPassengers = []; // ✅ Collect only today's valid passengers
+
 
       for (const shift of asset.passengers) {
         if (shift.shift !== Journey_shift) continue;
@@ -120,12 +122,16 @@ export const createJourney = async (req, res) => {
 
 
            // ✅ Check weekday restriction
-          if (Array.isArray(wfoDays) && !wfoDays.includes(today)) {
-            console.log(
-              `⛔ Skipping ${passenger.Employee_Name} – not scheduled today (${today})`
-            );
-            continue;
-          }
+          i// ✅ Check weekday restriction
+      if (Array.isArray(wfoDays) && !wfoDays.includes(today)) {
+        console.log(
+          `⛔ Skipping ${passenger.Employee_Name} – not scheduled today (${today})`
+        );
+        continue; // skip this passenger completely
+      }
+
+      // ✅ Add only today's scheduled passenger
+      todaysPassengers.push(passenger);
 
           // 7a: Schedule Pickup reminder
           if (bufferStart) {
