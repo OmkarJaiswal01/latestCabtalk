@@ -561,7 +561,10 @@ export const sendPassengerList = async (req, res) => {
     );
 
     console.log("✅ Step 10: WhatsApp sent successfully.");
-    return res.json({ success: true, message: "Passenger list sent via WhatsApp.", rows, debug, watiResponse: response.data });
+    // return res.json({ success: true, message: "Passenger list sent via WhatsApp.", rows, debug, watiResponse: response.data });
+    return res.status(200).json({success: true,
+      message: "Passenger list sent successfully via WhatsApp.",
+      data: response.data})
 
   } catch (error) {
     console.error("❌ sendPassengerList failed:", error);
