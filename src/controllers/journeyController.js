@@ -103,6 +103,10 @@ export const createJourney = async (req, res) => {
     if (Journey_Type.toLowerCase() === "pickup") {
       console.log("📣 [Step 7] Journey type is Pickup – scheduling passenger notifications...");
 
+ const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+      const today = WEEK_DAYS[new Date().getDay()];
+
+
       for (const shift of asset.passengers) {
         if (shift.shift !== Journey_shift) continue;
 
@@ -111,6 +115,15 @@ export const createJourney = async (req, res) => {
 
           if (!passenger) {
             console.log("⏩ [Step 7] Skipping empty passenger slot");
+            continue;
+          }
+
+
+           // ✅ Check weekday restriction
+          if (Array.isArray(wfoDays) && !wfoDays.includes(today)) {
+            console.log(
+              `⛔ Skipping ${passenger.Employee_Name} – not scheduled today (${today})`
+            );
             continue;
           }
 
