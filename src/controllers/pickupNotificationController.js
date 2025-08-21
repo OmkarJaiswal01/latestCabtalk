@@ -2,7 +2,7 @@ import Asset from "../models/assetModel.js";
 import Journey from "../models/JourneyModel.js";
 import { sendPickupConfirmationMessage } from "../utils/PickUpPassengerSendTem.js";
 import { sendOtherPassengerSameShiftUpdateMessage } from "../utils/InformOtherPassenger.js";
- 
+
 export const sendPickupConfirmation = async (req, res) => {
   try {
     const { pickedPassengerPhoneNumber } = req.body;
@@ -12,7 +12,7 @@ export const sendPickupConfirmation = async (req, res) => {
         message: "pickedPassengerPhoneNumber is required.",
       });
     }
- 
+
     const cleanedPhone = pickedPassengerPhoneNumber.replace(/\D/g, "");
     if (!/^91\d{10}$/.test(cleanedPhone)) {
       return res.status(400).json({
@@ -20,7 +20,7 @@ export const sendPickupConfirmation = async (req, res) => {
         message: "Invalid Indian phone number format.",
       });
     }
- 
+
     const asset = await Asset.findOne({
       "passengers.passengers.passenger": { $exists: true },
     }).populate({
@@ -32,7 +32,7 @@ export const sendPickupConfirmation = async (req, res) => {
         .status(404)
         .json({ success: false, message: "Asset not found." });
     }
- 
+
     let pickedPassenger = null;
     let currentShiftPassengers = [];
     for (const shift of asset.passengers) {
@@ -53,7 +53,7 @@ export const sendPickupConfirmation = async (req, res) => {
         message: "Picked passenger not found in asset.",
       });
     }
- 
+
     const journey = await Journey.findOne({ Asset: asset._id })
       .sort({ createdAt: -1 })
       .populate({
@@ -65,7 +65,7 @@ export const sendPickupConfirmation = async (req, res) => {
         .status(404)
         .json({ success: false, message: "No journey found for asset." });
     }
- 
+
     const alreadyBoarded = journey.boardedPassengers.some(
       (bp) =>
         (bp.passenger.Employee_PhoneNumber || "").replace(/\D/g, "") ===
@@ -76,28 +76,28 @@ export const sendPickupConfirmation = async (req, res) => {
         .status(400)
         .json({ success: false, message: "Passenger already boarded." });
     }
- 
+
     journey.boardedPassengers.push({ passenger: pickedPassenger._id });
     await journey.save();
- 
+
     const confirmation = await sendPickupConfirmationMessage(
       pickedPassenger.Employee_PhoneNumber,
       pickedPassenger.Employee_Name
     );
- 
+
     const boardedSet = new Set(
       journey.boardedPassengers
         .map((bp) => bp.passenger.Employee_PhoneNumber || "")
         .map((num) => num.replace(/\D/g, ""))
     );
     boardedSet.add(cleanedPhone);
- 
+
     const notifiedPassengers = [];
     for (const p of currentShiftPassengers) {
       if (!p?.Employee_PhoneNumber) continue;
       const phoneClean = p.Employee_PhoneNumber.replace(/\D/g, "");
       if (boardedSet.has(phoneClean)) continue;
- 
+
       const notify = await sendOtherPassengerSameShiftUpdateMessage(
         p.Employee_PhoneNumber,
         p.Employee_Name
@@ -109,7 +109,7 @@ export const sendPickupConfirmation = async (req, res) => {
         error: notify.error || null,
       });
     }
- 
+
     return res.status(200).json({
       success: true,
       message:
@@ -128,7 +128,7 @@ export const sendPickupConfirmation = async (req, res) => {
       .json({ success: false, message: "Server error", error: err.message });
   }
 };
- 
+
 // export const schedulePickupNotification = async (passenger, bufferStart) => {
 //   const phoneNumber = passenger?.Employee_PhoneNumber;
 //   const name = passenger?.Employee_Name;
@@ -194,7 +194,7 @@ export const sendPickupConfirmation = async (req, res) => {
 //     }
 //   }, delay);
 // };
- 
+
 // function formatBroadcastName(pickupTime) {
 //   const dt = new Date(pickupTime);
 //   const day = String(dt.getDate()).padStart(2, "0");
@@ -204,11 +204,11 @@ export const sendPickupConfirmation = async (req, res) => {
 //   const min = String(dt.getMinutes()).padStart(2, "0");
 //   return `${day}${month}${year}${hour}${min}`;
 // }
- 
+
 // export const scheduleBufferEndNotification = async (passenger, bufferEnd) => {
 //   const phoneNumber = passenger?.Employee_PhoneNumber;
 //   const name = passenger?.Employee_Name;
- 
+
 //   if (
 //     !phoneNumber ||
 //     !name ||
@@ -217,11 +217,11 @@ export const sendPickupConfirmation = async (req, res) => {
 //   ) {
 //     return;
 //   }
- 
+
 //   const now = new Date();
 //   const sendTime = new Date(bufferEnd);
 //   const delay = sendTime.getTime() - now.getTime();
- 
+
 //   const sendIfStillNotBoarded = async () => {
 //     const journey = await Journey.findOne({
 //       Journey_Type: { $regex: /^pickup$/, $options: "i" },
@@ -238,9 +238,9 @@ export const sendPickupConfirmation = async (req, res) => {
 //         },
 //       })
 //       .populate("boardedPassengers.passenger", "Employee_PhoneNumber");
- 
+
 //     if (!journey) return;
- 
+
 //     const driverPhoneNumber = journey.Driver?.phoneNumber;
 //     const shift = journey.Asset.passengers.find((s) =>
 //       s.passengers.some((p) => p.passenger._id.equals(passenger._id))
@@ -261,7 +261,7 @@ export const sendPickupConfirmation = async (req, res) => {
 //     const boardedIds = new Set(
 //       journey.boardedPassengers.map((bp) => bp.passenger._id.toString())
 //     );
- 
+
 //     for (const shiftPassenger of shift.passengers) {
 //       const pDoc = shiftPassenger.passenger;
 //       const pIdStr = pDoc._id.toString();
@@ -283,4 +283,3 @@ export const sendPickupConfirmation = async (req, res) => {
 //     setTimeout(sendIfStillNotBoarded, delay);
 //   }
 // };
- 

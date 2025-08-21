@@ -8,195 +8,127 @@ import { sendPickupConfirmationMessage } from "../utils/PickUpPassengerSendTem.j
 import { sendOtherPassengerSameShiftUpdateMessage } from "../utils/InformOtherPassenger.js";
 import { sendDropConfirmationMessage } from "../utils/dropConfirmationMsg.js";
 import { startRideUpdatePassengerController } from "../utils/rideStartUpdatePassenger.js"; 
-import {schedulePickupNotification} from "../controllers/pickupNotificationController.js"
-import {scheduleBufferEndNotification} from "../controllers/pickupNotificationController.js"
+// import { schedulePickupNotification, scheduleBufferEndNotification } from "../controllers/pickupNotificationController.js";
 
+const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-export const createJourney = async (req, res) => {
-  console.log("➡️ [Step 0] [START] createJourney triggered");
-  console.log("📦 [Step 0] Request Body:", JSON.stringify(req.body, null, 2));
-
-  try {
-    // Step 1: Validate request fields
-    const { Journey_Type, vehicleNumber, Journey_shift } = req.body;
-    if (!Journey_Type || !vehicleNumber || !Journey_shift) {
-      console.warn("⚠️ [Step 1] Validation failed: Missing fields");
-      return res.status(400).json({
-        message: "Journey_Type, vehicleNumber and Journey_shift are required.",
-      });
-    }
-    console.log("✅ [Step 1] Fields validated", { Journey_Type, vehicleNumber, Journey_shift });
-
-    // Step 2: Lookup driver
-    const driver = await Driver.findOne({ vehicleNumber });
-    if (!driver) {
-      console.warn("❌ [Step 2] Driver not found");
-      return res.status(404).json({ message: "No driver found with this vehicle number." });
-    }
-    console.log("✅ [Step 2] Driver found:", driver._id);
-
-    // Step 3: Lookup asset
-    const asset = await Asset.findOne({ driver: driver._id }).populate({
-      path: "passengers.passengers.passenger",
-      model: "Passenger",
-      select: "Employee_ID Employee_Name Employee_PhoneNumber",
+/**
+ * Create Journey
+ */
+export const createJourney = asyncHandler(async (req, res) => {
+  const { Journey_Type, vehicleNumber, Journey_shift } = req.body;
+  if (!Journey_Type || !vehicleNumber || !Journey_shift) {
+    return res.status(400).json({
+      message: "Journey_Type, vehicleNumber and Journey_shift are required.",
     });
-    if (!asset) {
-      console.warn("❌ [Step 3] Asset not found for driver");
-      return res.status(404).json({ message: "No assigned vehicle found for this driver." });
-    }
-    console.log("✅ [Step 3] Asset found:", asset._id);
-
-    // Step 4: Check for active journey
-    const existingJourney = await Journey.findOne({ Driver: driver._id });
-    if (existingJourney) {
-      console.warn("⛔ [Step 4] Active journey exists for driver");
-      await sendWhatsAppMessage(
-        driver.phoneNumber,
-        "Please end this current ride before starting a new one."
-      );
-      return res.status(400).json({
-        message: "Active journey exists. Please end the current ride before starting a new one.",
-      });
-    }
-    console.log("✅ [Step 4] No active journey found");
-
-    // Step 5: Create journey
-    const newJourney = new Journey({
-      Driver: driver._id,
-      Asset: asset._id,
-      Journey_Type,
-      Journey_shift,
-      Occupancy: 0,
-      SOS_Status: false,
-    });
-    await newJourney.save();
-    console.log("✅ [Step 5] New journey saved:", newJourney._id);
-
-    // Step 6: Update asset
-    asset.isActive = true;
-    await asset.save();
-    console.log("✅ [Step 6] Asset updated to active");
-
-    // Step 7: Pickup-specific passenger notifications
-    if (Journey_Type.toLowerCase() === "pickup") {
-      console.log("📣 [Step 7] Pickup flow: scheduling passenger notifications...");
-
-      const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-      const nowUTC = new Date();
-      const today = WEEK_DAYS[nowUTC.getDay()];
-      console.log("📆 [Step 7] Today (UTC):", today);
-
-      const todaysPassengers = [];
-
-      for (const shift of asset.passengers) {
-        if (shift.shift !== Journey_shift) continue;
-
-        for (const shiftPassenger of shift.passengers) {
-          const { passenger, bufferStart, bufferEnd, wfoDays } = shiftPassenger;
-          if (!passenger) continue;
-
-          // ✅ Normalize wfoDays (Mon, Tue...) and skip if passenger not scheduled today
-          const normalizedDays = Array.isArray(wfoDays)
-            ? wfoDays.map((d) => d.trim().slice(0, 3))
-            : [];
-          if (!normalizedDays.includes(today)) {
-            console.log(
-              `⛔ Skipping ${passenger.Employee_Name} – not scheduled today (${today})`
-            );
-            continue;
-          }
-
-          // Keep only scheduled passengers for app updates
-          todaysPassengers.push({
-            id: passenger._id,
-            name: passenger.Employee_Name,
-            phone: passenger.Employee_PhoneNumber,
-          });
-
-          // ✅ Schedule pickup reminder (UTC already in DB)
-          if (bufferStart) {
-            try {
-              await schedulePickupNotification(passenger, bufferStart);
-              console.log(
-                `🟢 Pickup reminder scheduled for ${passenger.Employee_Name} at ${bufferStart}`
-              );
-            } catch (err) {
-              console.error(
-                `❌ Pickup scheduling failed for ${passenger.Employee_Name}:`,
-                err.message
-              );
-            }
-          }
-
-          // ✅ Schedule missed-boarding check
-          if (bufferEnd) {
-            try {
-              await scheduleBufferEndNotification(passenger, bufferEnd);
-              console.log(
-                `🕒 Missed-boarding check scheduled for ${passenger.Employee_Name} at ${bufferEnd}`
-              );
-            } catch (err) {
-              console.error(
-                `❌ BufferEnd scheduling failed for ${passenger.Employee_Name}:`,
-                err.message
-              );
-            }
-          }
-        }
-      }
-
-      // 7c: Notify passenger app only if passengers are scheduled today
-      try {
-        if (todaysPassengers.length > 0) {
-          console.log(
-            `📢 [Step 7c] ${todaysPassengers.length} passengers scheduled today. Sending updates...`
-          );
-
-          const mockReq = { body: { vehicleNumber, Journey_shift } };
-          const mockRes = {
-            status: (code) => ({
-              json: (data) =>
-                console.log(`🟢 Passenger app notified [${code}]`, data),
-            }),
-          };
-
-          await startRideUpdatePassengerController(mockReq, mockRes);
-          await sendOtherPassengerSameShiftUpdateMessage(Journey_shift, asset._id);
-
-          console.log("✅ [Step 7c/7d] Passenger app + shift passengers notified");
-        } else {
-          console.log("⛔ [Step 7c] No passengers scheduled today. Skipping updates.");
-        }
-      } catch (err) {
-        console.error("🚨 [Step 7c/7d] Passenger notifications failed:", err.message);
-      }
-    } else {
-      console.log("ℹ️ [Step 7] Not a Pickup journey – skipping passenger notifications");
-    }
-
-    // Step 8: Emit socket event
-    const io = req.app.get("io");
-    if (io) io.emit("newJourney", newJourney);
-    console.log("✅ [Step 8] Socket event emitted");
-
-    // Step 9: Response
-    return res.status(201).json({
-      message: "Journey created successfully.",
-      newJourney,
-      updatedAsset: asset,
-    });
-  } catch (error) {
-    console.error("❌ [ERROR] createJourney failed:", error);
-    return res.status(500).json({ message: "Server error", error: error.message });
   }
-};
 
+  const driver = await Driver.findOne({ vehicleNumber });
+  if (!driver) {
+    return res.status(404).json({ message: "No driver found with this vehicle number." });
+  }
 
+  const asset = await Asset.findOne({ driver: driver._id }).populate({
+    path: "passengers.passengers.passenger",
+    model: "Passenger",
+    select: "Employee_ID Employee_Name Employee_PhoneNumber wfoDays",
+  });
 
+  if (!asset) {
+    return res.status(404).json({ message: "No assigned vehicle found for this driver." });
+  }
 
+  const existingJourney = await Journey.findOne({ Driver: driver._id });
+  if (existingJourney) {
+    await sendWhatsAppMessage(driver.phoneNumber, "Please end this current ride before starting a new one.");
+    return res.status(400).json({
+      message: "Active journey exists. Please end the current ride before starting a new one.",
+    });
+  }
 
+  const newJourney = new Journey({
+    Driver: driver._id,
+    Asset: asset._id,
+    Journey_Type,
+    Journey_shift,
+    Occupancy: 0,
+    SOS_Status: false,
+  });
 
+  await newJourney.save();
+
+  asset.isActive = true;
+  await asset.save();
+
+  // ✅ Pickup flow
+  if (Journey_Type.toLowerCase() === "pickup") {
+    console.log("📣 [Step 7] Pickup flow: scheduling passenger notifications...");
+
+    const today = WEEK_DAYS[new Date().getDay()];
+    console.log("📆 [Step 7] Today:", today);
+
+    const todaysPassengers = [];
+
+    // gather passengers scheduled for today
+    const passengersForShift = [];
+    for (const shift of asset.passengers) {
+      if (shift.shift !== Journey_shift) continue;
+
+      for (const sp of shift.passengers) {
+        const passenger = sp.passenger;
+        if (!passenger) continue;
+
+        const wfoDays = passenger.wfoDays || [];
+        const normalizedDays = Array.isArray(wfoDays)
+          ? wfoDays.map((d) => d.trim().slice(0, 3))
+          : [];
+
+        if (!normalizedDays.includes(today)) {
+          console.log(`⛔ Skipping ${passenger.Employee_Name} – not scheduled today (${today})`);
+          continue;
+        }
+
+        todaysPassengers.push({
+          id: passenger._id,
+          name: passenger.Employee_Name,
+          phone: passenger.Employee_PhoneNumber,
+        });
+
+        passengersForShift.push(sp);
+      }
+    }
+
+    // store journey notifications
+    try {
+      await storeJourneyNotifications(newJourney._id, passengersForShift);
+    } catch (err) {
+      console.error("Failed to store journey notifications:", err);
+    }
+
+    // update passengers app
+    try {
+      await startRideUpdatePassengerController(
+        { body: { vehicleNumber, Journey_shift } },
+        { status: () => ({ json: () => {} }) }
+      );
+    } catch (err) {
+      console.error("startRideUpdatePassengerController error:", err);
+    }
+  }
+
+  const io = req.app.get("io");
+  if (io) io.emit("newJourney", newJourney);
+
+  return res.status(201).json({
+    message: "Journey created successfully.",
+    newJourney,
+    updatedAsset: asset,
+  });
+});
+
+/**
+ * Get Journeys
+ */
 export const getJourneys = async (req, res) => {
   try {
     const journeys = await Journey.find()
@@ -227,53 +159,26 @@ export const getJourneys = async (req, res) => {
 
     return res.status(200).json(journeys);
   } catch (error) {
-    return res
-      .status(500)
-      .json({ message: "Server error", error: error.message });
+    return res.status(500).json({ message: "Server error", error: error.message });
   }
 };
 
-
-
-
+/**
+ * Wati Webhook Handler
+ */
 export const handleWatiWebhook = asyncHandler(async (req, res) => {
-  console.log("📥 [Step 0] Received WATI webhook...");
-  console.log("📝 [Step 0] Raw payload:", JSON.stringify(req.body, null, 2));
-
-  res.sendStatus(200); // Respond immediately
+  res.sendStatus(200);
 
   try {
-    // Step 1: Ignore non-interactive text replies
-    console.log("🔍 [Step 1] Checking if message is an interactive reply...");
-    if (req.body.text != null) {
-      console.log("🛑 [Step 1] Text message received. Ignored.", { text: req.body.text });
-      return;
-    }
+    if (req.body.text != null) return;
 
     const { id: eventId, type, waId, listReply } = req.body;
-    console.log("📦 [Step 1] Extracted payload fields:", { eventId, type, waId, listReply });
+    if (type !== "interactive" || !listReply?.title || !/\d{12}$/.test(listReply.title)) return;
 
-    if (type !== "interactive" || !listReply?.title || !/\d{12}$/.test(listReply.title)) {
-      console.log("🛑 [Step 1] Invalid or non-interactive payload. Ignored.");
-      return;
-    }
-
-    // Step 2: Extract passenger phone number
-    console.log("📥 [Step 2] listReply payload:", listReply);
     const passengerPhone = listReply.title.match(/(\d{12})$/)[0];
-    console.log(`📞 [Step 2] Extracted passenger phone: ${passengerPhone}`);
-
-    // Step 3: Lookup driver
-    console.log(`🔎 [Step 3] Looking up driver for waId: ${waId}...`);
     const driver = await Driver.findOne({ phoneNumber: waId });
-    if (!driver) {
-      console.log("🛑 [Step 3] Driver not found for waId:", waId);
-      return;
-    }
-    console.log("✅ [Step 3] Driver found:", driver._id, driver.phoneNumber);
+    if (!driver) return;
 
-    // Step 4: Fetch journey
-    console.log("🚐 [Step 4] Fetching journey for driver:", driver._id);
     const journey = await Journey.findOne({ Driver: driver._id })
       .populate({
         path: "Asset",
@@ -281,59 +186,36 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
         populate: {
           path: "passengers.passengers.passenger",
           model: "Passenger",
-          select: "Employee_ID Employee_Name Employee_PhoneNumber",
+          select: "Employee_ID Employee_Name Employee_PhoneNumber wfoDays",
         },
       })
       .populate("boardedPassengers.passenger", "Employee_Name Employee_PhoneNumber");
 
-    if (!journey) {
-      console.log("🛑 [Step 4] Journey not found for driver:", driver._id);
-      return;
-    }
-    console.log("✅ [Step 4] Journey found:", journey._id, "Occupancy:", journey.Occupancy);
+    if (!journey) return;
 
-    // Step 5: Prevent duplicate webhook events
-    console.log(`🧾 [Step 5] Checking for duplicate event ID: ${eventId}`);
     journey.processedWebhookEvents = journey.processedWebhookEvents || [];
-    if (journey.processedWebhookEvents.includes(eventId)) {
-      console.log("🛑 [Step 5] Duplicate event detected. Skipping event:", eventId);
-      return;
-    }
-    console.log("✅ [Step 5] Event not duplicate, proceeding...");
+    if (journey.processedWebhookEvents.includes(eventId)) return;
 
-    // Step 6: Find passenger
-    console.log(`🧍 [Step 6] Looking up passenger by phone: ${passengerPhone}`);
     const passenger = await Passenger.findOne({ Employee_PhoneNumber: passengerPhone });
     if (!passenger) {
-      console.log("🚫 [Step 6] Passenger not found in DB for phone:", passengerPhone);
       await sendWhatsAppMessage(waId, "🚫 Passenger not found. Please verify and retry.");
       return;
     }
-    console.log("✅ [Step 6] Passenger found:", passenger._id, passenger.Employee_Name);
 
-    // Step 7: Validate passenger in shift
-    console.log(`📋 [Step 7] Validating passenger assignment in Asset.passengers...`);
     const thisShift = journey.Asset.passengers.find((shift) =>
       shift.passengers.some((s) => s.passenger._id.equals(passenger._id))
     );
 
     if (!thisShift) {
-      console.log("🚫 [Step 7] Passenger not assigned to vehicle today.");
       await sendWhatsAppMessage(waId, "🚫 Passenger not assigned to this vehicle today.");
       return;
     }
-    console.log("✅ [Step 7] Passenger is assigned to this vehicle shift.");
 
-    // Step 8: Capacity check
-    console.log(`🚧 [Step 8] Checking vehicle capacity (${journey.Occupancy}/${journey.Asset.capacity})`);
     if (journey.Occupancy + 1 > journey.Asset.capacity) {
-      console.log("⚠️ [Step 8] Vehicle full. Boarding denied.");
       await sendWhatsAppMessage(waId, "⚠️ Cannot board. Vehicle at full capacity.");
       return;
     }
-    console.log("✅ [Step 8] Capacity check passed.");
 
-    // Step 9: Already boarded?
     const cleanedPhone = passengerPhone.replace(/\D/g, "");
     const alreadyBoarded = journey.boardedPassengers.some((bp) => {
       const bpPhone = (bp.passenger.Employee_PhoneNumber || "").replace(/\D/g, "");
@@ -341,14 +223,10 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
     });
 
     if (alreadyBoarded) {
-      console.log("✅ [Step 9] Passenger already boarded:", passenger.Employee_Name);
       await sendWhatsAppMessage(waId, "✅ Passenger already boarded.");
       return;
     }
-    console.log("✅ [Step 9] Passenger not boarded yet. Proceeding...");
 
-    // Step 10: Board passenger
-    console.log(`🟢 [Step 10] Boarding passenger: ${passenger.Employee_Name}`);
     journey.Occupancy += 1;
     journey.boardedPassengers.push({
       passenger: passenger._id,
@@ -356,31 +234,20 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
     });
     journey.processedWebhookEvents.push(eventId);
     await journey.save();
-    console.log("✅ [Step 10] Passenger boarded. Journey updated in DB.");
 
-    // Step 11: Emit socket update
     if (req.app.get("io")) {
-      console.log("📡 [Step 11] Emitting journey update to socket...");
       req.app.get("io").emit("journeyUpdated", journey);
-    } else {
-      console.log("⚠️ [Step 11] Socket.io not available in app context.");
     }
 
-    // Step 12: Confirm with driver
-    console.log("📲 [Step 12] Sending confirmation to driver...");
     await sendWhatsAppMessage(waId, "✅ Passenger confirmed. Thank you!");
-    console.log("✅ [Step 12] Driver confirmation sent.");
 
     const jt = (journey.Journey_Type || "").toLowerCase();
-    console.log("🧭 Journey type:", jt);
+    const today = WEEK_DAYS[new Date().getDay()];
 
-    // Step 13: Pickup-specific logic
     if (jt === "pickup") {
-      console.log("🛻 [Step 13] Journey type is pickup. Running pickup logic...");
-
+      // confirm pickup to this passenger
       await sendPickupConfirmationMessage(passenger.Employee_PhoneNumber, passenger.Employee_Name);
 
-      // Notify other shift passengers
       const boardedSet = new Set(
         journey.boardedPassengers.map((bp) =>
           (bp.passenger.Employee_PhoneNumber || "").replace(/\D/g, "")
@@ -388,58 +255,44 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
       );
       boardedSet.add(cleanedPhone);
 
+      // notify other passengers of same shift (only if scheduled today)
       for (const shiftPassenger of thisShift.passengers) {
         const pDoc = shiftPassenger.passenger;
-        const phoneClean = (pDoc.Employee_PhoneNumber || "").replace(/\D/g, "");
+        if (!pDoc?.Employee_PhoneNumber) continue;
 
-        if (!phoneClean || boardedSet.has(phoneClean)) {
-          console.log(`⏩ Skipping ${pDoc.Employee_Name}: Already boarded or missing phone.`);
+        const wfoDays = pDoc.wfoDays || [];
+        const normalizedDays = Array.isArray(wfoDays)
+          ? wfoDays.map((d) => d.trim().slice(0, 3))
+          : [];
+
+        if (!normalizedDays.includes(today)) {
+          console.log(`⛔ Skipping ${pDoc.Employee_Name} – not scheduled today (${today})`);
           continue;
         }
+
+        const phoneClean = (pDoc.Employee_PhoneNumber || "").replace(/\D/g, "");
+        if (!phoneClean || boardedSet.has(phoneClean)) continue;
 
         const bufferEnd = shiftPassenger.bufferEnd ? new Date(shiftPassenger.bufferEnd) : null;
-        if (!bufferEnd || isNaN(bufferEnd.getTime())) {
-          console.warn(`⚠️ Skipping ${pDoc.Employee_Name}: Invalid or missing bufferEnd.`);
-          continue;
-        }
+        if (!bufferEnd || isNaN(bufferEnd.getTime())) continue;
 
-        const now = new Date();
-        if (bufferEnd <= now) {
-          console.log(`⏱️ Skipping ${pDoc.Employee_Name}: bufferEnd already passed.`);
-          continue;
+        if (bufferEnd > new Date()) {
+          await sendOtherPassengerSameShiftUpdateMessage(pDoc.Employee_PhoneNumber, pDoc.Employee_Name);
         }
-
-        console.log(`🔔 [Step 13] Notifying ${pDoc.Employee_Name} about ${passenger.Employee_Name} boarding...`);
-        await sendOtherPassengerSameShiftUpdateMessage(
-          pDoc.Employee_PhoneNumber,
-          pDoc.Employee_Name,
-          passenger.Employee_Name
-        );
       }
 
-      // Step 14: Schedule bufferEnd reminder
-      const shiftData = thisShift.passengers.find((p) =>
-        p.passenger._id.equals(passenger._id)
-      );
+      // schedule buffer end notification for this passenger
+      const shiftData = thisShift.passengers.find((p) => p.passenger._id.equals(passenger._id));
       const bufferEnd = shiftData?.bufferEnd;
-
       if (bufferEnd) {
-        console.log(`⏳ [Step 14] Scheduling bufferEnd notification for ${passenger.Employee_Name} at ${bufferEnd}`);
         await scheduleBufferEndNotification(passenger, bufferEnd);
-      } else {
-        console.warn(`⚠️ [Step 14] No bufferEnd for ${passenger.Employee_Name}`);
       }
     }
 
-    // Step 15: Drop journey
     if (jt === "drop") {
-      console.log("🛬 [Step 15] Journey type is drop. Sending drop confirmation...");
       await sendDropConfirmationMessage(passenger.Employee_PhoneNumber, passenger.Employee_Name);
-      console.log("✅ [Step 15] Drop confirmation sent.");
     }
-
-    console.log("🎉 [DONE] handleWatiWebhook completed successfully.");
   } catch (err) {
-    console.error("❌ [ERROR] handleWatiWebhook:", err);
+    console.error("handleWatiWebhook error:", err);
   }
 });
