@@ -12,7 +12,6 @@ import {schedulePickupNotification} from "../controllers/pickupNotificationContr
 import {scheduleBufferEndNotification} from "../controllers/pickupNotificationController.js"
 
 
-
 export const createJourney = async (req, res) => {
   console.log("➡️ [Step 0] [START] createJourney triggered");
   console.log("📦 [Step 0] Request Body:", JSON.stringify(req.body, null, 2));
@@ -103,43 +102,40 @@ export const createJourney = async (req, res) => {
     if (Journey_Type.toLowerCase() === "pickup") {
       console.log("📣 [Step 7] Journey type is Pickup – scheduling passenger notifications...");
 
- const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+      const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
       const today = WEEK_DAYS[new Date().getDay()];
-
-      let todaysPassengers = []; // ✅ Collect only today's valid passengers
-
 
       for (const shift of asset.passengers) {
         if (shift.shift !== Journey_shift) continue;
 
         for (const shiftPassenger of shift.passengers) {
-          const { passenger, bufferStart, bufferEnd } = shiftPassenger;
+          const { passenger, bufferStart, bufferEnd, wfoDays } = shiftPassenger;
 
           if (!passenger) {
             console.log("⏩ [Step 7] Skipping empty passenger slot");
             continue;
           }
 
-
-           // ✅ Check weekday restriction
-          i// ✅ Check weekday restriction
-      if (Array.isArray(wfoDays) && !wfoDays.includes(today)) {
-        console.log(
-          `⛔ Skipping ${passenger.Employee_Name} – not scheduled today (${today})`
-        );
-        continue; // skip this passenger completely
-      }
-
-      // ✅ Add only today's scheduled passenger
-      todaysPassengers.push(passenger);
+          // ✅ Skip passengers not scheduled today
+          if (Array.isArray(wfoDays) && !wfoDays.includes(today)) {
+            console.log(
+              `⛔ Skipping ${passenger.Employee_Name} – not scheduled today (${today})`
+            );
+            continue;
+          }
 
           // 7a: Schedule Pickup reminder
           if (bufferStart) {
             try {
               await schedulePickupNotification(passenger, bufferStart);
-              console.log(`🟢 [Step 7a] Pickup reminder scheduled for ${passenger.Employee_Name} at ${bufferStart}`);
+              console.log(
+                `🟢 [Step 7a] Pickup reminder scheduled for ${passenger.Employee_Name} at ${bufferStart}`
+              );
             } catch (err) {
-              console.error(`❌ [Step 7a] Failed to schedule pickup notification for ${passenger.Employee_Name}:`, err.message);
+              console.error(
+                `❌ [Step 7a] Failed to schedule pickup notification for ${passenger.Employee_Name}:`,
+                err.message
+              );
             }
           }
 
@@ -147,9 +143,14 @@ export const createJourney = async (req, res) => {
           if (bufferEnd) {
             try {
               await scheduleBufferEndNotification(passenger, bufferEnd);
-              console.log(`🕒 [Step 7b] Missed-boarding check scheduled for ${passenger.Employee_Name} at ${bufferEnd}`);
+              console.log(
+                `🕒 [Step 7b] Missed-boarding check scheduled for ${passenger.Employee_Name} at ${bufferEnd}`
+              );
             } catch (err) {
-              console.error(`❌ [Step 7b] Failed to schedule bufferEnd check for ${passenger.Employee_Name}:`, err.message);
+              console.error(
+                `❌ [Step 7b] Failed to schedule bufferEnd check for ${passenger.Employee_Name}:`,
+                err.message
+              );
             }
           }
         }
