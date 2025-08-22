@@ -295,16 +295,16 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
         const pDoc = shiftPassenger.passenger;
         if (!pDoc?.Employee_PhoneNumber) continue;
 
-        const normalizedDays = normalizeDays(pDoc.wfoDays);
-        const isScheduledToday =
-          pDoc.wfoDays == null || normalizedDays.includes(today);
+        // const normalizedDays = normalizeDays(pDoc.wfoDays);
+        // const isScheduledToday =
+        //   pDoc.wfoDays == null || normalizedDays.includes(today);
 
-        if (!isScheduledToday) {
-          console.log(
-            `⛔ Skipping ${pDoc.Employee_Name} – not scheduled today (${today}) | wfoDays=${pDoc.wfoDays}`
-          );
-          continue;
-        }
+        // if (!isScheduledToday) {
+        //   console.log(
+        //     `⛔ Skipping ${pDoc.Employee_Name} – not scheduled today (${today}) | wfoDays=${pDoc.wfoDays}`
+        //   );
+        //   continue;
+        // }
 
         const phoneClean = (pDoc.Employee_PhoneNumber || "").replace(/\D/g, "");
         if (!phoneClean || boardedSet.has(phoneClean)) continue;
@@ -317,7 +317,7 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
         if (bufferEnd > new Date()) {
           await sendOtherPassengerSameShiftUpdateMessage(
             pDoc.Employee_PhoneNumber,
-            pDoc.Employee_Name
+            passenger.Employee_Name
           );
         }
       }
