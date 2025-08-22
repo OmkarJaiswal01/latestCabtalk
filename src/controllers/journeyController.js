@@ -76,14 +76,9 @@ export const createJourney = asyncHandler(async (req, res) => {
   asset.isActive = true;
   await asset.save();
 
-  // ✅ Pickup flow
   if (Journey_Type.toLowerCase() === "pickup") {
-    console.log("📣 [Step 7] Pickup flow: scheduling passenger notifications...");
-
     const today = WEEK_DAYS[new Date().getDay()].toLowerCase();
-    console.log("📆 [Step 7] Today:", today);
 
-    const todaysPassengers = [];
     const passengersForShift = [];
 
     for (const shift of asset.passengers) {
@@ -97,18 +92,7 @@ export const createJourney = asyncHandler(async (req, res) => {
         const isScheduledToday =
           passenger.wfoDays == null || normalizedDays.includes(today);
 
-        if (!isScheduledToday) {
-          console.log(
-            `⛔ Skipping ${passenger.Employee_Name} – not scheduled today (${today}) | wfoDays=${passenger.wfoDays}`
-          );
-          continue;
-        }
-
-        todaysPassengers.push({
-          id: passenger._id,
-          name: passenger.Employee_Name,
-          phone: passenger.Employee_PhoneNumber,
-        });
+        if (!isScheduledToday) continue;
 
         passengersForShift.push(sp);
       }
@@ -178,9 +162,6 @@ export const getJourneys = async (req, res) => {
   }
 };
 
-/**
- * Wati Webhook Handler
- */
 export const handleWatiWebhook = asyncHandler(async (req, res) => {
   res.sendStatus(200);
 
@@ -258,7 +239,7 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
       return;
     }
 
-    // ✅ Update journey state
+    // Update journey state
     journey.Occupancy += 1;
     journey.boardedPassengers.push({
       passenger: passenger._id,
@@ -290,7 +271,7 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
       );
       boardedSet.add(cleanedPhone);
 
-      // ✅ Notify other passengers (scheduled today only)
+      // Notify other passengers (scheduled today only)
       for (const shiftPassenger of thisShift.passengers) {
         const pDoc = shiftPassenger.passenger;
         if (!pDoc?.Employee_PhoneNumber) continue;
@@ -299,35 +280,16 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
         const isScheduledToday =
           pDoc.wfoDays == null || normalizedDays.includes(today);
 
-        if (!isScheduledToday) {
-          console.log(
-            `⛔ Skipping ${pDoc.Employee_Name} – not scheduled today (${today}) | wfoDays=${pDoc.wfoDays}`
-          );
-          continue;
-        }
+        if (!isScheduledToday) continue;
 
         const phoneClean = (pDoc.Employee_PhoneNumber || "").replace(/\D/g, "");
         if (!phoneClean || boardedSet.has(phoneClean)) continue;
 
-        // ✅ Passenger boarded, so inform others immediately
+        // Passenger boarded, so inform others immediately
         await sendOtherPassengerSameShiftUpdateMessage(
           pDoc.Employee_PhoneNumber,
           passenger.Employee_Name
         );
-      }
-
-      // ✅ Schedule bufferEnd expiry logic for this passenger
-      const shiftData = thisShift.passengers.find((p) =>
-        p.passenger._id.equals(passenger._id)
-      );
-      const bufferEnd = shiftData?.bufferEnd
-        ? new Date(shiftData.bufferEnd)
-        : null;
-
-      if (bufferEnd && !isNaN(bufferEnd.getTime())) {
-        // You said you run cron, so we just persist this info
-        // Your cron job will later check if passenger not boarded before bufferEnd → notify others
-        await scheduleBufferEndNotification(passenger, bufferEnd);
       }
     }
 
@@ -341,5 +303,3 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
     console.error("handleWatiWebhook error:", err);
   }
 });
-
-
