@@ -229,8 +229,7 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
 
     const cleanedPhone = passengerPhone.replace(/\D/g, "");
     const alreadyBoarded = journey.boardedPassengers.some((bp) => {
-      const bpPhone =
-        (bp.passenger.Employee_PhoneNumber || "").replace(/\D/g, "");
+      const bpPhone =(bp.passenger.Employee_PhoneNumber || "").replace(/\D/g, "");
       return bpPhone === cleanedPhone;
     });
 
@@ -285,11 +284,18 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
         const phoneClean = (pDoc.Employee_PhoneNumber || "").replace(/\D/g, "");
         if (!phoneClean || boardedSet.has(phoneClean)) continue;
 
-        // Passenger boarded, so inform others immediately
-        await sendOtherPassengerSameShiftUpdateMessage(
-          pDoc.Employee_PhoneNumber,
-          passenger.Employee_Name
-        );
+        try {
+          await sendOtherPassengerSameShiftUpdateMessage(
+            pDoc.Employee_PhoneNumber,
+            pDoc.Employee_Name
+          );
+        } catch (err) {
+          console.error(
+            "Failed to notify other passenger",
+            pDoc.Employee_PhoneNumber,
+            err
+          );
+        }
       }
     }
 
