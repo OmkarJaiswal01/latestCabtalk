@@ -12,9 +12,7 @@ import { startRideUpdatePassengerController } from "../utils/rideStartUpdatePass
 
 const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-/**
- * Create Journey
- */
+
 export const createJourney = asyncHandler(async (req, res) => {
   const { Journey_Type, vehicleNumber, Journey_shift } = req.body;
   if (!Journey_Type || !vehicleNumber || !Journey_shift) {
