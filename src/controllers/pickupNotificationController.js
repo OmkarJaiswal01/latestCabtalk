@@ -2,7 +2,17 @@ import Asset from "../models/assetModel.js";
 import Journey from "../models/JourneyModel.js";
 import { sendPickupConfirmationMessage } from "../utils/PickUpPassengerSendTem.js";
 import { sendOtherPassengerSameShiftUpdateMessage } from "../utils/InformOtherPassenger.js";
-import { storeJourneyNotifications } from "../utils/notificationService.js"; // ✅ FIX
+import { storeJourneyNotifications } from "../utils/notificationService.js";
+
+// ✅ helper to normalize days
+const normalizeDays = (days) => {
+  if (!Array.isArray(days)) return [];
+  return days.map((d) => d.toString().trim().toLowerCase().slice(0, 3));
+};
+
+// ✅ get today (short format, lowercase)
+const getTodayShort = () =>
+  new Date().toLocaleDateString("en-US", { weekday: "short", timeZone: "Asia/Kolkata" }).toLowerCase();
 
 export const sendPickupConfirmation = async (req, res) => {
   try {
@@ -22,7 +32,7 @@ export const sendPickupConfirmation = async (req, res) => {
       });
     }
 
-    // ✅ Find asset with this passenger
+    // ✅ Find asset that has this passenger
     const asset = await Asset.findOne({
       "passengers.passengers.passenger": { $exists: true },
     }).populate({
@@ -54,6 +64,18 @@ export const sendPickupConfirmation = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: "Picked passenger not found in asset.",
+      });
+    }
+
+    // ✅ Check schedule for picked passenger
+    const today = getTodayShort();
+    const pickedDays = normalizeDays(pickedPassenger.wfoDays);
+    const pickedScheduled = pickedPassenger.wfoDays == null || pickedDays.includes(today);
+
+    if (!pickedScheduled) {
+      return res.status(200).json({
+        success: false,
+        message: `Passenger ${pickedPassenger.Employee_Name} is not scheduled today (${today}).`,
       });
     }
 
@@ -91,41 +113,52 @@ export const sendPickupConfirmation = async (req, res) => {
       console.error("storeJourneyNotifications error:", err);
     }
 
-    // ✅ Confirm to picked passenger
+    // ✅ Confirm to picked passenger (since scheduled today)
     const confirmation = await sendPickupConfirmationMessage(
       pickedPassenger.Employee_PhoneNumber,
       pickedPassenger.Employee_Name
     );
 
-    // ✅ Notify other shift passengers
+    // ✅ Notify other shift passengers (only those scheduled today)
     const boardedSet = new Set(
-      journey.boardedPassengers
-        .map((bp) => (bp.passenger.Employee_PhoneNumber || "").replace(/\D/g, ""))
+      journey.boardedPassengers.map((bp) =>
+        (bp.passenger.Employee_PhoneNumber || "").replace(/\D/g, "")
+      )
     );
     boardedSet.add(cleanedPhone);
 
     const notifiedPassengers = [];
     for (const p of currentShiftPassengers) {
       if (!p?.Employee_PhoneNumber) continue;
+
+      // skip already boarded
       const phoneClean = p.Employee_PhoneNumber.replace(/\D/g, "");
       if (boardedSet.has(phoneClean)) continue;
 
-      const notify = await sendOtherPassengerSameShiftUpdateMessage(
-        p.Employee_PhoneNumber,
-        p.Employee_Name
-      );
+      // check schedule
+      const normalized = normalizeDays(p.wfoDays);
+      const isScheduled = p.wfoDays == null || normalized.includes(today);
+      if (!isScheduled) continue;
 
-      notifiedPassengers.push({
-        name: p.Employee_Name,
-        phone: p.Employee_PhoneNumber,
-        success: notify.success,
-        error: notify.error || null,
-      });
+      try {
+        const notify = await sendOtherPassengerSameShiftUpdateMessage(
+          p.Employee_PhoneNumber,
+          p.Employee_Name
+        );
+        notifiedPassengers.push({
+          name: p.Employee_Name,
+          phone: p.Employee_PhoneNumber,
+          success: notify.success,
+          error: notify.error || null,
+        });
+      } catch (err) {
+        console.error("Failed to notify passenger:", p.Employee_PhoneNumber, err);
+      }
     }
 
     return res.status(200).json({
       success: true,
-      message: "Confirmation sent to picked passenger; unboarded shift-mates updated.",
+      message: "Confirmation sent to picked passenger; unboarded scheduled shift-mates updated.",
       pickedPassenger: {
         name: pickedPassenger.Employee_Name,
         phone: pickedPassenger.Employee_PhoneNumber,
