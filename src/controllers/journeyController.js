@@ -257,11 +257,17 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
     const today = WEEK_DAYS[new Date().getDay()].toLowerCase();
 
     if (jt === "pickup") {
-      // Confirm pickup to this passenger
-      await sendPickupConfirmationMessage(
-        passenger.Employee_PhoneNumber,
-        passenger.Employee_Name
-      );
+      // Confirm pickup ONLY if scheduled today
+      const normalizedDays = normalizeDays(passenger.wfoDays);
+      const isScheduledToday =
+        passenger.wfoDays == null || normalizedDays.includes(today);
+
+      if (isScheduledToday) {
+        await sendPickupConfirmationMessage(
+          passenger.Employee_PhoneNumber,
+          passenger.Employee_Name
+        );
+      }
 
       const boardedSet = new Set(
         journey.boardedPassengers.map((bp) =>
@@ -270,16 +276,16 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
       );
       boardedSet.add(cleanedPhone);
 
-      // Notify other passengers (scheduled today only)
+      // Notify other passengers (ONLY scheduled today)
       for (const shiftPassenger of thisShift.passengers) {
         const pDoc = shiftPassenger.passenger;
         if (!pDoc?.Employee_PhoneNumber) continue;
 
         const normalizedDays = normalizeDays(pDoc.wfoDays);
-        const isScheduledToday =
+        const isScheduledTodayOther =
           pDoc.wfoDays == null || normalizedDays.includes(today);
 
-        if (!isScheduledToday) continue;
+        if (!isScheduledTodayOther) continue;
 
         const phoneClean = (pDoc.Employee_PhoneNumber || "").replace(/\D/g, "");
         if (!phoneClean || boardedSet.has(phoneClean)) continue;
@@ -300,10 +306,17 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
     }
 
     if (jt === "drop") {
-      await sendDropConfirmationMessage(
-        passenger.Employee_PhoneNumber,
-        passenger.Employee_Name
-      );
+      // Confirm drop ONLY if scheduled today
+      const normalizedDays = normalizeDays(passenger.wfoDays);
+      const isScheduledToday =
+        passenger.wfoDays == null || normalizedDays.includes(today);
+
+      if (isScheduledToday) {
+        await sendDropConfirmationMessage(
+          passenger.Employee_PhoneNumber,
+          passenger.Employee_Name
+        );
+      }
     }
   } catch (err) {
     console.error("handleWatiWebhook error:", err);
