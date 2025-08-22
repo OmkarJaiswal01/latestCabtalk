@@ -8,11 +8,18 @@ import { sendPickupConfirmationMessage } from "../utils/PickUpPassengerSendTem.j
 import { sendOtherPassengerSameShiftUpdateMessage } from "../utils/InformOtherPassenger.js";
 import { sendDropConfirmationMessage } from "../utils/dropConfirmationMsg.js";
 import { startRideUpdatePassengerController } from "../utils/rideStartUpdatePassenger.js"; 
-import {storeJourneyNotifications} from  "../utils/notificationService.js"
-// import { schedulePickupNotification, scheduleBufferEndNotification } from "../controllers/pickupNotificationController.js";
+import { storeJourneyNotifications } from "../utils/notificationService.js";
 
 const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+/**
+ * Normalize WFO days to lowercase 3-letter strings
+ * Example: ["Monday", "FRI", " thursday "] -> ["mon", "fri", "thu"]
+ */
+const normalizeDays = (wfoDays = []) =>
+  Array.isArray(wfoDays)
+    ? wfoDays.map((d) => d.trim().slice(0, 3).toLowerCase())
+    : [];
 
 export const createJourney = asyncHandler(async (req, res) => {
   const { Journey_Type, vehicleNumber, Journey_shift } = req.body;
@@ -63,13 +70,12 @@ export const createJourney = asyncHandler(async (req, res) => {
   if (Journey_Type.toLowerCase() === "pickup") {
     console.log("📣 [Step 7] Pickup flow: scheduling passenger notifications...");
 
-    const today = WEEK_DAYS[new Date().getDay()];
+    const today = WEEK_DAYS[new Date().getDay()].toLowerCase(); // e.g. "fri"
     console.log("📆 [Step 7] Today:", today);
 
     const todaysPassengers = [];
-
-    // gather passengers scheduled for today
     const passengersForShift = [];
+
     for (const shift of asset.passengers) {
       if (shift.shift !== Journey_shift) continue;
 
@@ -77,13 +83,12 @@ export const createJourney = asyncHandler(async (req, res) => {
         const passenger = sp.passenger;
         if (!passenger) continue;
 
-        const wfoDays = passenger.wfoDays || [];
-        const normalizedDays = Array.isArray(wfoDays)
-          ? wfoDays.map((d) => d.trim().slice(0, 3))
-          : [];
+        const normalizedDays = normalizeDays(passenger.wfoDays);
 
         if (!normalizedDays.includes(today)) {
-          console.log(`⛔ Skipping ${passenger.Employee_Name} – not scheduled today (${today})`);
+          console.log(
+            `⛔ Skipping ${passenger.Employee_Name} – not scheduled today (${today}) | wfoDays=${passenger.wfoDays}`
+          );
           continue;
         }
 
@@ -241,7 +246,7 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
     await sendWhatsAppMessage(waId, "✅ Passenger confirmed. Thank you!");
 
     const jt = (journey.Journey_Type || "").toLowerCase();
-    const today = WEEK_DAYS[new Date().getDay()];
+    const today = WEEK_DAYS[new Date().getDay()].toLowerCase();
 
     if (jt === "pickup") {
       // confirm pickup to this passenger
@@ -259,13 +264,12 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
         const pDoc = shiftPassenger.passenger;
         if (!pDoc?.Employee_PhoneNumber) continue;
 
-        const wfoDays = pDoc.wfoDays || [];
-        const normalizedDays = Array.isArray(wfoDays)
-          ? wfoDays.map((d) => d.trim().slice(0, 3))
-          : [];
+        const normalizedDays = normalizeDays(pDoc.wfoDays);
 
         if (!normalizedDays.includes(today)) {
-          console.log(`⛔ Skipping ${pDoc.Employee_Name} – not scheduled today (${today})`);
+          console.log(
+            `⛔ Skipping ${pDoc.Employee_Name} – not scheduled today (${today}) | wfoDays=${pDoc.wfoDays}`
+          );
           continue;
         }
 
@@ -280,9 +284,9 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
         }
       }
 
-      // schedule buffer end notification for this passenger
-      const shiftData = thisShift.passengers.find((p) => p.passenger._id.equals(passenger._id));
-      const bufferEnd = shiftData?.bufferEnd;
+      // schedule buffer end notification for this passenger (disabled in your snippet)
+      // const shiftData = thisShift.passengers.find((p) => p.passenger._id.equals(passenger._id));
+      // const bufferEnd = shiftData?.bufferEnd;
       // if (bufferEnd) {
       //   await scheduleBufferEndNotification(passenger, bufferEnd);
       // }
