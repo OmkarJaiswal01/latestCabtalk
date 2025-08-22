@@ -181,6 +181,161 @@ export const getJourneys = async (req, res) => {
 /**
  * Wati Webhook Handler
  */
+// export const handleWatiWebhook = asyncHandler(async (req, res) => {
+//   res.sendStatus(200);
+
+//   try {
+//     if (req.body.text != null) return;
+
+//     const { id: eventId, type, waId, listReply } = req.body;
+//     if (type !== "interactive" || !listReply?.title || !/\d{12}$/.test(listReply.title))
+//       return;
+
+//     const passengerPhone = listReply.title.match(/(\d{12})$/)[0];
+//     const driver = await Driver.findOne({ phoneNumber: waId });
+//     if (!driver) return;
+
+//     const journey = await Journey.findOne({ Driver: driver._id })
+//       .populate({
+//         path: "Asset",
+//         select: "passengers capacity",
+//         populate: {
+//           path: "passengers.passengers.passenger",
+//           model: "Passenger",
+//           select:
+//             "Employee_ID Employee_Name Employee_PhoneNumber wfoDays",
+//         },
+//       })
+//       .populate(
+//         "boardedPassengers.passenger",
+//         "Employee_Name Employee_PhoneNumber"
+//       );
+
+//     if (!journey) return;
+
+//     journey.processedWebhookEvents = journey.processedWebhookEvents || [];
+//     if (journey.processedWebhookEvents.includes(eventId)) return;
+
+//     const passenger = await Passenger.findOne({
+//       Employee_PhoneNumber: passengerPhone,
+//     });
+//     if (!passenger) {
+//       await sendWhatsAppMessage(
+//         waId,
+//         "🚫 Passenger not found. Please verify and retry."
+//       );
+//       return;
+//     }
+
+//     const thisShift = journey.Asset.passengers.find((shift) =>
+//       shift.passengers.some((s) => s.passenger._id.equals(passenger._id))
+//     );
+
+//     if (!thisShift) {
+//       await sendWhatsAppMessage(
+//         waId,
+//         "🚫 Passenger not assigned to this vehicle today."
+//       );
+//       return;
+//     }
+
+//     if (journey.Occupancy + 1 > journey.Asset.capacity) {
+//       await sendWhatsAppMessage(
+//         waId,
+//         "⚠️ Cannot board. Vehicle at full capacity."
+//       );
+//       return;
+//     }
+
+//     const cleanedPhone = passengerPhone.replace(/\D/g, "");
+//     const alreadyBoarded = journey.boardedPassengers.some((bp) => {
+//       const bpPhone =
+//         (bp.passenger.Employee_PhoneNumber || "").replace(/\D/g, "");
+//       return bpPhone === cleanedPhone;
+//     });
+
+//     if (alreadyBoarded) {
+//       await sendWhatsAppMessage(waId, "✅ Passenger already boarded.");
+//       return;
+//     }
+
+//     journey.Occupancy += 1;
+//     journey.boardedPassengers.push({
+//       passenger: passenger._id,
+//       boardedAt: new Date(),
+//     });
+//     journey.processedWebhookEvents.push(eventId);
+//     await journey.save();
+
+//     if (req.app.get("io")) {
+//       req.app.get("io").emit("journeyUpdated", journey);
+//     }
+
+//     await sendWhatsAppMessage(waId, "✅ Passenger confirmed. Thank you!");
+
+//     const jt = (journey.Journey_Type || "").toLowerCase();
+//     const today = WEEK_DAYS[new Date().getDay()].toLowerCase();
+
+//     if (jt === "pickup") {
+//       // confirm pickup to this passenger
+//       await sendPickupConfirmationMessage(
+//         passenger.Employee_PhoneNumber,
+//         passenger.Employee_Name
+//       );
+
+//       const boardedSet = new Set(
+//         journey.boardedPassengers.map((bp) =>
+//           (bp.passenger.Employee_PhoneNumber || "").replace(/\D/g, "")
+//         )
+//       );
+//       boardedSet.add(cleanedPhone);
+
+//       // notify other passengers of same shift (only if scheduled today)
+//       for (const shiftPassenger of thisShift.passengers) {
+//         const pDoc = shiftPassenger.passenger;
+//         if (!pDoc?.Employee_PhoneNumber) continue;
+
+//         // const normalizedDays = normalizeDays(pDoc.wfoDays);
+//         // const isScheduledToday =
+//         //   pDoc.wfoDays == null || normalizedDays.includes(today);
+
+//         // if (!isScheduledToday) {
+//         //   console.log(
+//         //     `⛔ Skipping ${pDoc.Employee_Name} – not scheduled today (${today}) | wfoDays=${pDoc.wfoDays}`
+//         //   );
+//         //   continue;
+//         // }
+
+//         const phoneClean = (pDoc.Employee_PhoneNumber || "").replace(/\D/g, "");
+//         if (!phoneClean || boardedSet.has(phoneClean)) continue;
+
+//         const bufferEnd = shiftPassenger.bufferEnd
+//           ? new Date(shiftPassenger.bufferEnd)
+//           : null;
+//         if (!bufferEnd || isNaN(bufferEnd.getTime())) continue;
+
+//         if (bufferEnd > new Date()) {
+//           await sendOtherPassengerSameShiftUpdateMessage(
+//             pDoc.Employee_PhoneNumber,
+//             passenger.Employee_Name
+//           );
+//         }
+//       }
+//     }
+
+//     if (jt === "drop") {
+//       await sendDropConfirmationMessage(
+//         passenger.Employee_PhoneNumber,
+//         passenger.Employee_Name
+//       );
+//     }
+//   } catch (err) {
+//     console.error("handleWatiWebhook error:", err);
+//   }
+// });
+
+
+
 export const handleWatiWebhook = asyncHandler(async (req, res) => {
   res.sendStatus(200);
 
@@ -202,8 +357,7 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
         populate: {
           path: "passengers.passengers.passenger",
           model: "Passenger",
-          select:
-            "Employee_ID Employee_Name Employee_PhoneNumber wfoDays",
+          select: "Employee_ID Employee_Name Employee_PhoneNumber wfoDays",
         },
       })
       .populate(
@@ -259,6 +413,7 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
       return;
     }
 
+    // update journey
     journey.Occupancy += 1;
     journey.boardedPassengers.push({
       passenger: passenger._id,
@@ -290,35 +445,70 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
       );
       boardedSet.add(cleanedPhone);
 
-      // notify other passengers of same shift (only if scheduled today)
+      // 🔔 notify other passengers when this passenger boarded
       for (const shiftPassenger of thisShift.passengers) {
         const pDoc = shiftPassenger.passenger;
         if (!pDoc?.Employee_PhoneNumber) continue;
 
-        // const normalizedDays = normalizeDays(pDoc.wfoDays);
-        // const isScheduledToday =
-        //   pDoc.wfoDays == null || normalizedDays.includes(today);
+        const normalizedDays = normalizeDays(pDoc.wfoDays);
+        const isScheduledToday =
+          pDoc.wfoDays == null || normalizedDays.includes(today);
 
-        // if (!isScheduledToday) {
-        //   console.log(
-        //     `⛔ Skipping ${pDoc.Employee_Name} – not scheduled today (${today}) | wfoDays=${pDoc.wfoDays}`
-        //   );
-        //   continue;
-        // }
+        if (!isScheduledToday) continue;
 
         const phoneClean = (pDoc.Employee_PhoneNumber || "").replace(/\D/g, "");
         if (!phoneClean || boardedSet.has(phoneClean)) continue;
+
+        await sendOtherPassengerSameShiftUpdateMessage(
+          pDoc.Employee_PhoneNumber,
+          passenger.Employee_Name
+        );
+      }
+
+      // 🔔 also schedule bufferEnd checks for other passengers
+      for (const shiftPassenger of thisShift.passengers) {
+        const pDoc = shiftPassenger.passenger;
+        if (!pDoc?.Employee_PhoneNumber) continue;
+
+        const normalizedDays = normalizeDays(pDoc.wfoDays);
+        const isScheduledToday =
+          pDoc.wfoDays == null || normalizedDays.includes(today);
+
+        if (!isScheduledToday) continue;
 
         const bufferEnd = shiftPassenger.bufferEnd
           ? new Date(shiftPassenger.bufferEnd)
           : null;
         if (!bufferEnd || isNaN(bufferEnd.getTime())) continue;
 
-        if (bufferEnd > new Date()) {
-          await sendOtherPassengerSameShiftUpdateMessage(
-            pDoc.Employee_PhoneNumber,
-            passenger.Employee_Name
-          );
+        const phoneClean = (pDoc.Employee_PhoneNumber || "").replace(/\D/g, "");
+        if (!phoneClean) continue;
+
+        // set a timer to trigger at bufferEnd
+        const delay = bufferEnd.getTime() - Date.now();
+        if (delay > 0) {
+          setTimeout(async () => {
+            try {
+              // recheck if passenger already boarded
+              const updatedJourney = await Journey.findById(journey._id).populate(
+                "boardedPassengers.passenger",
+                "Employee_PhoneNumber"
+              );
+              const alreadyBoarded = updatedJourney.boardedPassengers.some((bp) => {
+                const bpPhone =
+                  (bp.passenger.Employee_PhoneNumber || "").replace(/\D/g, "");
+                return bpPhone === phoneClean;
+              });
+              if (alreadyBoarded) return;
+
+              await sendOtherPassengerSameShiftUpdateMessage(
+                pDoc.Employee_PhoneNumber,
+                pDoc.Employee_Name
+              );
+            } catch (err) {
+              console.error("bufferEnd notification error:", err);
+            }
+          }, delay);
         }
       }
     }
