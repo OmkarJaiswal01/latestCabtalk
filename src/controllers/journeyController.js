@@ -309,18 +309,25 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
         const phoneClean = (pDoc.Employee_PhoneNumber || "").replace(/\D/g, "");
         if (!phoneClean || boardedSet.has(phoneClean)) continue;
 
-        const bufferEnd = shiftPassenger.bufferEnd
-          ? new Date(shiftPassenger.bufferEnd)
-          : null;
-        if (!bufferEnd || isNaN(bufferEnd.getTime())) continue;
-
         // ✅ Passenger boarded, so inform others immediately
-        if (bufferEnd > new Date()) {
-          await sendOtherPassengerSameShiftUpdateMessage(
-            pDoc.Employee_PhoneNumber,
-            passenger.Employee_Name
-          );
-        }
+        await sendOtherPassengerSameShiftUpdateMessage(
+          pDoc.Employee_PhoneNumber,
+          passenger.Employee_Name
+        );
+      }
+
+      // ✅ Schedule bufferEnd expiry logic for this passenger
+      const shiftData = thisShift.passengers.find((p) =>
+        p.passenger._id.equals(passenger._id)
+      );
+      const bufferEnd = shiftData?.bufferEnd
+        ? new Date(shiftData.bufferEnd)
+        : null;
+
+      if (bufferEnd && !isNaN(bufferEnd.getTime())) {
+        // You said you run cron, so we just persist this info
+        // Your cron job will later check if passenger not boarded before bufferEnd → notify others
+        await scheduleBufferEndNotification(passenger, bufferEnd);
       }
     }
 
@@ -334,4 +341,5 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
     console.error("handleWatiWebhook error:", err);
   }
 });
+
 
