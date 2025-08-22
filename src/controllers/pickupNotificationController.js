@@ -2,6 +2,7 @@ import Asset from "../models/assetModel.js";
 import Journey from "../models/JourneyModel.js";
 import { sendPickupConfirmationMessage } from "../utils/PickUpPassengerSendTem.js";
 import { sendOtherPassengerSameShiftUpdateMessage } from "../utils/InformOtherPassenger.js";
+import { storeJourneyNotifications } from "../utils/notificationService.js"; // ✅ FIX
 
 export const sendPickupConfirmation = async (req, res) => {
   try {
@@ -21,32 +22,34 @@ export const sendPickupConfirmation = async (req, res) => {
       });
     }
 
+    // ✅ Find asset with this passenger
     const asset = await Asset.findOne({
       "passengers.passengers.passenger": { $exists: true },
     }).populate({
       path: "passengers.passengers.passenger",
-      select: "Employee_PhoneNumber Employee_Name",
+      select: "Employee_PhoneNumber Employee_Name wfoDays",
     });
+
     if (!asset) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Asset not found." });
+      return res.status(404).json({ success: false, message: "Asset not found." });
     }
 
     let pickedPassenger = null;
     let currentShiftPassengers = [];
+    let shiftBlock = null;
+
     for (const shift of asset.passengers) {
       const match = shift.passengers.find(
-        (sp) =>
-          sp.passenger?.Employee_PhoneNumber?.replace(/\D/g, "") ===
-          cleanedPhone
+        (sp) => sp.passenger?.Employee_PhoneNumber?.replace(/\D/g, "") === cleanedPhone
       );
       if (match) {
         pickedPassenger = match.passenger;
         currentShiftPassengers = shift.passengers.map((sp) => sp.passenger);
+        shiftBlock = shift.passengers;
         break;
       }
     }
+
     if (!pickedPassenger) {
       return res.status(404).json({
         success: false,
@@ -54,41 +57,50 @@ export const sendPickupConfirmation = async (req, res) => {
       });
     }
 
+    // ✅ Find active journey
     const journey = await Journey.findOne({ Asset: asset._id })
       .sort({ createdAt: -1 })
-      .populate({
-        path: "boardedPassengers.passenger",
-        select: "Employee_PhoneNumber Employee_Name",
-      });
+      .populate("boardedPassengers.passenger", "Employee_PhoneNumber Employee_Name");
+
     if (!journey) {
-      return res
-        .status(404)
-        .json({ success: false, message: "No journey found for asset." });
+      return res.status(404).json({ success: false, message: "No journey found for asset." });
     }
 
+    // ✅ Check already boarded
     const alreadyBoarded = journey.boardedPassengers.some(
       (bp) =>
-        (bp.passenger.Employee_PhoneNumber || "").replace(/\D/g, "") ===
-        cleanedPhone
+        (bp.passenger.Employee_PhoneNumber || "").replace(/\D/g, "") === cleanedPhone
     );
     if (alreadyBoarded) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Passenger already boarded." });
+      return res.status(400).json({ success: false, message: "Passenger already boarded." });
     }
 
-    journey.boardedPassengers.push({ passenger: pickedPassenger._id });
+    // ✅ Mark boarded
+    journey.boardedPassengers.push({
+      passenger: pickedPassenger._id,
+      boardedAt: new Date(),
+    });
     await journey.save();
 
+    // ✅ Store updated journey notifications
+    try {
+      if (shiftBlock) {
+        await storeJourneyNotifications(journey._id, shiftBlock);
+      }
+    } catch (err) {
+      console.error("storeJourneyNotifications error:", err);
+    }
+
+    // ✅ Confirm to picked passenger
     const confirmation = await sendPickupConfirmationMessage(
       pickedPassenger.Employee_PhoneNumber,
       pickedPassenger.Employee_Name
     );
 
+    // ✅ Notify other shift passengers
     const boardedSet = new Set(
       journey.boardedPassengers
-        .map((bp) => bp.passenger.Employee_PhoneNumber || "")
-        .map((num) => num.replace(/\D/g, ""))
+        .map((bp) => (bp.passenger.Employee_PhoneNumber || "").replace(/\D/g, ""))
     );
     boardedSet.add(cleanedPhone);
 
@@ -102,6 +114,7 @@ export const sendPickupConfirmation = async (req, res) => {
         p.Employee_PhoneNumber,
         p.Employee_Name
       );
+
       notifiedPassengers.push({
         name: p.Employee_Name,
         phone: p.Employee_PhoneNumber,
@@ -112,8 +125,7 @@ export const sendPickupConfirmation = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message:
-        "Confirmation sent to picked passenger; unboarded shift-mates updated.",
+      message: "Confirmation sent to picked passenger; unboarded shift-mates updated.",
       pickedPassenger: {
         name: pickedPassenger.Employee_Name,
         phone: pickedPassenger.Employee_PhoneNumber,
@@ -123,9 +135,10 @@ export const sendPickupConfirmation = async (req, res) => {
       boardedCount: journey.boardedPassengers.length,
     });
   } catch (err) {
-    return res
-      .status(500)
-      .json({ success: false, message: "Server error", error: err.message });
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: err.message,
+    });
   }
 };
-
