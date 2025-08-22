@@ -7,20 +7,22 @@ import { sendWhatsAppMessage } from "../utils/whatsappHelper.js";
 import { sendPickupConfirmationMessage } from "../utils/PickUpPassengerSendTem.js";
 import { sendOtherPassengerSameShiftUpdateMessage } from "../utils/InformOtherPassenger.js";
 import { sendDropConfirmationMessage } from "../utils/dropConfirmationMsg.js";
-import { startRideUpdatePassengerController } from "../utils/rideStartUpdatePassenger.js"; 
+import { startRideUpdatePassengerController } from "../utils/rideStartUpdatePassenger.js";
 import { storeJourneyNotifications } from "../utils/notificationService.js";
 
 const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 /**
- * Normalize WFO days to lowercase 3-letter strings
- * Example: ["Monday", "FRI", " thursday "] -> ["mon", "fri", "thu"]
+ * Normalize wfoDays to 3-letter lowercase format
  */
-const normalizeDays = (wfoDays = []) =>
-  Array.isArray(wfoDays)
-    ? wfoDays.map((d) => d.trim().slice(0, 3).toLowerCase())
-    : [];
+const normalizeDays = (days) => {
+  if (!Array.isArray(days)) return [];
+  return days.map((d) => d.trim().slice(0, 3).toLowerCase());
+};
 
+/**
+ * Create Journey
+ */
 export const createJourney = asyncHandler(async (req, res) => {
   const { Journey_Type, vehicleNumber, Journey_shift } = req.body;
   if (!Journey_Type || !vehicleNumber || !Journey_shift) {
@@ -31,7 +33,9 @@ export const createJourney = asyncHandler(async (req, res) => {
 
   const driver = await Driver.findOne({ vehicleNumber });
   if (!driver) {
-    return res.status(404).json({ message: "No driver found with this vehicle number." });
+    return res
+      .status(404)
+      .json({ message: "No driver found with this vehicle number." });
   }
 
   const asset = await Asset.findOne({ driver: driver._id }).populate({
@@ -41,14 +45,20 @@ export const createJourney = asyncHandler(async (req, res) => {
   });
 
   if (!asset) {
-    return res.status(404).json({ message: "No assigned vehicle found for this driver." });
+    return res
+      .status(404)
+      .json({ message: "No assigned vehicle found for this driver." });
   }
 
   const existingJourney = await Journey.findOne({ Driver: driver._id });
   if (existingJourney) {
-    await sendWhatsAppMessage(driver.phoneNumber, "Please end this current ride before starting a new one.");
+    await sendWhatsAppMessage(
+      driver.phoneNumber,
+      "Please end this current ride before starting a new one."
+    );
     return res.status(400).json({
-      message: "Active journey exists. Please end the current ride before starting a new one.",
+      message:
+        "Active journey exists. Please end the current ride before starting a new one.",
     });
   }
 
@@ -70,7 +80,7 @@ export const createJourney = asyncHandler(async (req, res) => {
   if (Journey_Type.toLowerCase() === "pickup") {
     console.log("📣 [Step 7] Pickup flow: scheduling passenger notifications...");
 
-    const today = WEEK_DAYS[new Date().getDay()].toLowerCase(); // e.g. "fri"
+    const today = WEEK_DAYS[new Date().getDay()].toLowerCase();
     console.log("📆 [Step 7] Today:", today);
 
     const todaysPassengers = [];
@@ -84,8 +94,10 @@ export const createJourney = asyncHandler(async (req, res) => {
         if (!passenger) continue;
 
         const normalizedDays = normalizeDays(passenger.wfoDays);
+        const isScheduledToday =
+          passenger.wfoDays == null || normalizedDays.includes(today);
 
-        if (!normalizedDays.includes(today)) {
+        if (!isScheduledToday) {
           console.log(
             `⛔ Skipping ${passenger.Employee_Name} – not scheduled today (${today}) | wfoDays=${passenger.wfoDays}`
           );
@@ -136,10 +148,7 @@ export const createJourney = asyncHandler(async (req, res) => {
 export const getJourneys = async (req, res) => {
   try {
     const journeys = await Journey.find()
-      .populate({
-        path: "Driver",
-        model: "Driver",
-      })
+      .populate({ path: "Driver", model: "Driver" })
       .populate({
         path: "Asset",
         model: "Asset",
@@ -163,7 +172,9 @@ export const getJourneys = async (req, res) => {
 
     return res.status(200).json(journeys);
   } catch (error) {
-    return res.status(500).json({ message: "Server error", error: error.message });
+    return res
+      .status(500)
+      .json({ message: "Server error", error: error.message });
   }
 };
 
@@ -177,7 +188,8 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
     if (req.body.text != null) return;
 
     const { id: eventId, type, waId, listReply } = req.body;
-    if (type !== "interactive" || !listReply?.title || !/\d{12}$/.test(listReply.title)) return;
+    if (type !== "interactive" || !listReply?.title || !/\d{12}$/.test(listReply.title))
+      return;
 
     const passengerPhone = listReply.title.match(/(\d{12})$/)[0];
     const driver = await Driver.findOne({ phoneNumber: waId });
@@ -190,19 +202,28 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
         populate: {
           path: "passengers.passengers.passenger",
           model: "Passenger",
-          select: "Employee_ID Employee_Name Employee_PhoneNumber wfoDays",
+          select:
+            "Employee_ID Employee_Name Employee_PhoneNumber wfoDays",
         },
       })
-      .populate("boardedPassengers.passenger", "Employee_Name Employee_PhoneNumber");
+      .populate(
+        "boardedPassengers.passenger",
+        "Employee_Name Employee_PhoneNumber"
+      );
 
     if (!journey) return;
 
     journey.processedWebhookEvents = journey.processedWebhookEvents || [];
     if (journey.processedWebhookEvents.includes(eventId)) return;
 
-    const passenger = await Passenger.findOne({ Employee_PhoneNumber: passengerPhone });
+    const passenger = await Passenger.findOne({
+      Employee_PhoneNumber: passengerPhone,
+    });
     if (!passenger) {
-      await sendWhatsAppMessage(waId, "🚫 Passenger not found. Please verify and retry.");
+      await sendWhatsAppMessage(
+        waId,
+        "🚫 Passenger not found. Please verify and retry."
+      );
       return;
     }
 
@@ -211,18 +232,25 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
     );
 
     if (!thisShift) {
-      await sendWhatsAppMessage(waId, "🚫 Passenger not assigned to this vehicle today.");
+      await sendWhatsAppMessage(
+        waId,
+        "🚫 Passenger not assigned to this vehicle today."
+      );
       return;
     }
 
     if (journey.Occupancy + 1 > journey.Asset.capacity) {
-      await sendWhatsAppMessage(waId, "⚠️ Cannot board. Vehicle at full capacity.");
+      await sendWhatsAppMessage(
+        waId,
+        "⚠️ Cannot board. Vehicle at full capacity."
+      );
       return;
     }
 
     const cleanedPhone = passengerPhone.replace(/\D/g, "");
     const alreadyBoarded = journey.boardedPassengers.some((bp) => {
-      const bpPhone = (bp.passenger.Employee_PhoneNumber || "").replace(/\D/g, "");
+      const bpPhone =
+        (bp.passenger.Employee_PhoneNumber || "").replace(/\D/g, "");
       return bpPhone === cleanedPhone;
     });
 
@@ -250,7 +278,10 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
 
     if (jt === "pickup") {
       // confirm pickup to this passenger
-      await sendPickupConfirmationMessage(passenger.Employee_PhoneNumber, passenger.Employee_Name);
+      await sendPickupConfirmationMessage(
+        passenger.Employee_PhoneNumber,
+        passenger.Employee_Name
+      );
 
       const boardedSet = new Set(
         journey.boardedPassengers.map((bp) =>
@@ -265,8 +296,10 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
         if (!pDoc?.Employee_PhoneNumber) continue;
 
         const normalizedDays = normalizeDays(pDoc.wfoDays);
+        const isScheduledToday =
+          pDoc.wfoDays == null || normalizedDays.includes(today);
 
-        if (!normalizedDays.includes(today)) {
+        if (!isScheduledToday) {
           console.log(
             `⛔ Skipping ${pDoc.Employee_Name} – not scheduled today (${today}) | wfoDays=${pDoc.wfoDays}`
           );
@@ -276,24 +309,25 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
         const phoneClean = (pDoc.Employee_PhoneNumber || "").replace(/\D/g, "");
         if (!phoneClean || boardedSet.has(phoneClean)) continue;
 
-        const bufferEnd = shiftPassenger.bufferEnd ? new Date(shiftPassenger.bufferEnd) : null;
+        const bufferEnd = shiftPassenger.bufferEnd
+          ? new Date(shiftPassenger.bufferEnd)
+          : null;
         if (!bufferEnd || isNaN(bufferEnd.getTime())) continue;
 
         if (bufferEnd > new Date()) {
-          await sendOtherPassengerSameShiftUpdateMessage(pDoc.Employee_PhoneNumber, pDoc.Employee_Name);
+          await sendOtherPassengerSameShiftUpdateMessage(
+            pDoc.Employee_PhoneNumber,
+            pDoc.Employee_Name
+          );
         }
       }
-
-      // schedule buffer end notification for this passenger (disabled in your snippet)
-      // const shiftData = thisShift.passengers.find((p) => p.passenger._id.equals(passenger._id));
-      // const bufferEnd = shiftData?.bufferEnd;
-      // if (bufferEnd) {
-      //   await scheduleBufferEndNotification(passenger, bufferEnd);
-      // }
     }
 
     if (jt === "drop") {
-      await sendDropConfirmationMessage(passenger.Employee_PhoneNumber, passenger.Employee_Name);
+      await sendDropConfirmationMessage(
+        passenger.Employee_PhoneNumber,
+        passenger.Employee_Name
+      );
     }
   } catch (err) {
     console.error("handleWatiWebhook error:", err);
