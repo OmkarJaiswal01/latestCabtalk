@@ -4,11 +4,11 @@ const WATI_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI5MzAwNGExMi0
 if (!WATI_TOKEN) {
   console.warn("WATI TOken error");
 }
-
+ 
 function buildFirstName(name) {
   return String(name || "").trim().split(/\s+/)[0] || name || "";
 }
-
+ 
 async function postTemplate(payload) {
   const res = await fetch(WATI_URL, {
     method: "POST",
@@ -18,7 +18,7 @@ async function postTemplate(payload) {
     },
     body: JSON.stringify(payload)
   });
-
+ 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     const err = new Error(`WATI API ${res.status}: ${text}`);
@@ -27,7 +27,7 @@ async function postTemplate(payload) {
   }
   return res.json();
 }
-
+ 
 export async function sendPickupTemplateBefore10Min(phoneNumber, name) {
   const firstName = buildFirstName(name);
   const payload = {
@@ -42,7 +42,7 @@ export async function sendPickupTemplateBefore10Min(phoneNumber, name) {
   };
   return postTemplate(payload);
 }
-
+ 
 export async function sendBufferEndTemplate(phoneNumber, name) {
   const firstName = buildFirstName(name);
   const payload = {
@@ -57,3 +57,5 @@ export async function sendBufferEndTemplate(phoneNumber, name) {
   };
   return postTemplate(payload);
 }
+ 
+ 

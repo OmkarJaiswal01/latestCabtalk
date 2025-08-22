@@ -2,7 +2,7 @@
 import crypto from "crypto";
 import Journey from "../models/JourneyModel.js";
 import Notification from "../models/Notification.js";
-
+ 
 function roundUpToNextMinute(date = new Date()) {
   const d = new Date(date);
   if (d.getSeconds() === 0 && d.getMilliseconds() === 0) return d;
@@ -10,7 +10,7 @@ function roundUpToNextMinute(date = new Date()) {
   d.setMinutes(d.getMinutes() + 1);
   return d;
 }
-
+ 
 export async function storeJourneyNotifications(journeyId, passengers) {
   const exists = await Journey.exists({ _id: journeyId });
   if (!exists) {
@@ -19,14 +19,14 @@ export async function storeJourneyNotifications(journeyId, passengers) {
     );
     return;
   }
-
+ 
   const docs = [];
   const now = new Date();
-
+ 
   for (const p of passengers) {
     if (!p.passenger) continue;
     const triggers = [];
-
+ 
     if (p.bufferStart) {
       const bufferStartTime = new Date(p.bufferStart);
       if (bufferStartTime > now) {
@@ -34,7 +34,7 @@ export async function storeJourneyNotifications(journeyId, passengers) {
           bufferStartTime.getTime() - 10 * 60 * 1000
         );
         let scheduledTime;
-
+ 
         if (intendedBefore10 > now) {
           scheduledTime = intendedBefore10;
         } else {
@@ -66,9 +66,9 @@ export async function storeJourneyNotifications(journeyId, passengers) {
         });
       }
     }
-
+ 
     if (triggers.length === 0) continue;
-
+ 
     docs.push({
       journeyId,
       passengerId: p.passenger._id,
@@ -78,7 +78,7 @@ export async function storeJourneyNotifications(journeyId, passengers) {
       createdAt: now,
     });
   }
-
+ 
   if (docs.length) {
     await Notification.insertMany(docs);
   }
@@ -92,3 +92,4 @@ export async function cancelPendingNotificationsForPassenger(
     { $set: { "triggers.$[].status": "cancelled" } }
   );
 }
+ 

@@ -7,7 +7,7 @@ import {
   sendBufferEndTemplate,
 } from "../utils/notificationScheduler.js";
 import { sendWhatsAppMessage } from "../utils/whatsappHelper.js";
-
+ 
 const POLL_CRON = "* * * * *";
 if (global.__notificationCronStarted) {
   console.warn(
@@ -15,19 +15,23 @@ if (global.__notificationCronStarted) {
   );
 } else {
   global.__notificationCronStarted = true;
-
+ 
   cron.schedule(
     POLL_CRON,
     async () => {
       try {
         const now = new Date();
-
+ 
         const dueNotifications = await Notification.find({
           triggers: {
             $elemMatch: { status: "pending", triggerTime: { $lte: now } },
           },
         }).limit(500);
-
+ 
+        console.info(
+          `[cron] found ${dueNotifications.length} due notifications`
+        );
+ 
         if (!dueNotifications.length) return;
         const journeyIds = [
           ...new Set(
@@ -38,25 +42,25 @@ if (global.__notificationCronStarted) {
           `[cron] unique journeyIds (${journeyIds.length}):`,
           journeyIds
         );
-
+ 
         const journeys = await Journey.find({ _id: { $in: journeyIds } })
           .select("_id Asset boardedPassengers Journey_Type Driver")
           .populate({ path: "Asset", select: "isActive" })
           .populate({ path: "Driver", select: "phoneNumber Employee_Name" });
-
+ 
         console.info(
           `[cron] fetched ${journeys.length}/${journeyIds.length} journeys from DB`
         );
-
+ 
         const journeyMap = new Map();
         for (const j of journeys) journeyMap.set(j._id.toString(), j);
         for (const notif of dueNotifications) {
           const notifId = notif._id.toString();
           const journeyId = notif.journeyId?.toString() || null;
           const passengerId = notif.passengerId?.toString() || null;
-
+ 
           const journey = journeyId ? journeyMap.get(journeyId) : null;
-
+ 
           if (!journey || !journey.Asset || !journey.Asset.isActive) {
             let changed = false;
             for (const t of notif.triggers) {
@@ -77,7 +81,7 @@ if (global.__notificationCronStarted) {
                 console.info(`[cron] deleted completed notif ${notifId}`);
                 continue; // move to next notif
               }
-
+ 
               if (changed) {
                 await notif.save();
                 console.debug(
@@ -96,16 +100,16 @@ if (global.__notificationCronStarted) {
                   : errPersist.message || errPersist
               );
             }
-
+ 
             // continue to next notification after handling missing/inactive journey
             continue;
           }
-
+ 
           // prepare set of boarded passenger ids for quick lookup
           const boardedIds = new Set(
             (journey.boardedPassengers || []).map((b) => b.passenger.toString())
           );
-
+ 
           let modified = false;
           // iterate triggers and act on due pending triggers
           for (const t of notif.triggers) {
@@ -115,7 +119,7 @@ if (global.__notificationCronStarted) {
               );
               continue;
             }
-
+ 
             // cancel if passenger already boarded
             if (passengerId && boardedIds.has(passengerId)) {
               t.status = "cancelled";
@@ -125,7 +129,7 @@ if (global.__notificationCronStarted) {
               );
               continue;
             }
-
+ 
             // attempt sending templates
             try {
               console.info(
@@ -164,7 +168,7 @@ if (global.__notificationCronStarted) {
                   `[cron] unknown trigger type ${t.type} for notif ${notifId}`
                 );
               }
-
+ 
               t.status = "sent";
               modified = true;
               console.info(`[cron] sent ${t.type} for notif ${notifId}`);
@@ -180,7 +184,7 @@ if (global.__notificationCronStarted) {
               modified = true;
             }
           } // end triggers loop
-
+ 
           // Unified persistence / cleanup after handling triggers
           try {
             const hasPending = notif.triggers.some(
@@ -192,7 +196,7 @@ if (global.__notificationCronStarted) {
               console.info(`[cron] deleted completed notif ${notifId}`);
               continue;
             }
-
+ 
             if (modified) {
               await notif.save();
               console.debug(
@@ -223,3 +227,4 @@ if (global.__notificationCronStarted) {
     { scheduled: true }
   );
 }
+ 
