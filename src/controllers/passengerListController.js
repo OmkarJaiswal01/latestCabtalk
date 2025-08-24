@@ -1,6 +1,3 @@
-
-
-// new
 // passengerListController.js
 import axios from "axios";
 import Driver from "../models/driverModel.js";
@@ -49,7 +46,7 @@ export const sendPassengerList = async (req, res) => {
     const asset = await Asset.findOne({ driver: driver._id }).populate({
       path: "passengers.passengers.passenger",
       model: "Passenger",
-      select: "Employee_Name Employee_PhoneNumber Employee_Address",
+      select: "Employee_Name Employee_PhoneNumber Employee_Address wfoDays",
     });
     console.log("👉 Step 3: Asset found =", asset?._id || "❌ none");
     if (!asset) {
@@ -73,7 +70,7 @@ export const sendPassengerList = async (req, res) => {
 
     // Step 6: Filtering logic (UTC)
     const nowUTC = new Date();
-    const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const WEEK_DAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
     const today = WEEK_DAYS[nowUTC.getDay()];
     console.log("👉 Step 6: Today (UTC) =", today, "Current UTC =", nowUTC.toISOString());
 
@@ -85,7 +82,7 @@ export const sendPassengerList = async (req, res) => {
     const debug = [];
     const newlyMissed = [];
 
-    const rows = (shiftBlock.passengers || []).map((ps, idx) => {
+    const rows = (shiftBlock.passengers || []).map((ps) => {
       if (!ps.passenger) return null;
       const pid = ps.passenger._id.toString();
 
@@ -99,10 +96,12 @@ export const sendPassengerList = async (req, res) => {
         newlyMissed.push(pid); // mark for DB update
       }
 
-      const normalizedDays = Array.isArray(ps.wfoDays)
-        ? ps.wfoDays.map((d) => d.trim().slice(0, 3))
+      // ✅ FIX: use passenger.wfoDays
+      const normalizedDays = Array.isArray(ps.passenger?.wfoDays)
+        ? ps.passenger.wfoDays.map((d) => d.trim().slice(0, 3).toLowerCase())
         : [];
-      const includeToday = normalizedDays.includes(today);
+      const includeToday =
+        ps.passenger?.wfoDays == null || normalizedDays.includes(today);
 
       const included = includeToday && !boarded && !missed && !bufferEndPassed;
 
@@ -164,14 +163,14 @@ export const sendPassengerList = async (req, res) => {
     );
 
     console.log("✅ Step 10: WhatsApp sent successfully.");
-    // return res.json({ success: true, message: "Passenger list sent via WhatsApp.", rows, debug, watiResponse: response.data });
-    return res.status(200).json({success: true,
+    return res.status(200).json({
+      success: true,
       message: "Passenger list sent successfully via WhatsApp.",
-      data: response.data})
+      data: response.data,
+    });
 
   } catch (error) {
     console.error("❌ sendPassengerList failed:", error);
     return res.status(500).json({ success: false, message: "Internal error", error: error.message });
   }
 };
- 
