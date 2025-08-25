@@ -1,7 +1,7 @@
 import Asset from "../models/assetModel.js";
 import Driver from "../models/driverModel.js";
 import axios from "axios";
-import { isScheduledToday } from "../utils/scheduleHelper.js"; // ✅ use shared helper
+import { isScheduledToday } from "../utils/weekoffPassengerHelper.js"; // ✅ use shared helper
 
 export const startRideUpdatePassengerController = async (req, res) => {
   try {
