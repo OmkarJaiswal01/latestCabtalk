@@ -55,6 +55,7 @@ export const startRideUpdatePassengerController = async (req, res) => {
 
     const today = WEEK_DAYS[new Date().getDay()].toLowerCase();
     let notifiedCount = 0;
+    let skippedCount = 0;
 
     for (const entry of shiftGroup.passengers) {
       const passenger = entry.passenger;
@@ -63,7 +64,13 @@ export const startRideUpdatePassengerController = async (req, res) => {
         const isScheduledToday =
           passenger.wfoDays == null || normalizedDays.includes(today);
 
-        if (!isScheduledToday) continue; // ❌ skip passengers not scheduled today
+        if (!isScheduledToday) {
+          console.log(
+            `⏭️ Skipped passenger ${passenger.Employee_Name} (${passenger.Employee_PhoneNumber}) - not scheduled for today (${today}).`
+          );
+          skippedCount++;
+          continue;
+        }
 
         const phone = passenger.Employee_PhoneNumber.replace(/\D/g, "");
         const rawName = passenger.Employee_Name || "Passenger";
@@ -81,14 +88,17 @@ export const startRideUpdatePassengerController = async (req, res) => {
             {
               headers: {
                 "content-type": "application/json-patch+json",
-                Authorization: `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI0YmM2MmFkNC04NTQ3LTRkYzItOTc0Ni0wNmRkMjZiODYzNmMiLCJ1bmlxdWVfbmFtZSI6Im9ta2FyLmphaXN3YWxAZ3hpbmV0d29ya3MuY29tIiwibmFtZWlkIjoib21rYXIuamFpc3dhbEBneGluZXR3b3Jrcy5jb20iLCJlbWFpbCI6Im9ta2FyLmphaXN3YWxAZ3hpbmV0d29ya3MuY29tIiwiYXV0aF90aW1lIjoiMDYvMzAvMjAyNSAwNzozNzoxNSIsInRlbmFudF9pZCI6IjM4ODQyOCIsImRiX25hbWUiOiJtdC1wcm9kLVRlbmFudHMiLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOiJBRE1JTklTVFJBVE9SIiwiZXhwIjoyNTM0MDIzMDA4MDAsImlzcyI6IkNsYXJlX0FJIiwiYXVkIjoiQ2xhcmVfQUkifQ.dr6x_b4olu0EL6oJcEENiD2nMYrlQx5MWlQTJBttcqg`,
+                Authorization: `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI0YmM2MmFkNC04NTQ3LTRkYzItOTc0Ni0wNmRkMjZiODYzNmMiLCJ1bmlxdWVfbmFtZSI6Im9ta2FyLmphaXN3YWxAZ3hpbmV0d29ya3MuY29tIiwibmFtZWlkIjoib21rYXIuamFpc3dhbEBneGluZXR3b3Jrcy5jb20iLCJlbWFpbCI6Im9ta2FyLmphaXN3YWxAZ3hpbmV0d29ya3MuY29tIiwiYXV0aF90aW1lIjoiMDYvMzAvMjAyNSAwNzozNzoxNSIsInRlbmFudF9pZCI6IjM4ODQyOCIsImRiX25hbWUiOiJtdC1wcm9kLVRlbmFudHMiLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOiJBRE1JTklTVFJBVE9SIiwiZXhwIjoyNTM0MDIzMDA4MDAsImlzcyI6IkNsYXJlX0FJIiwiYXVkIjoiQ2xhcmVfQUkifQ.dr6x_b4olu0EL6oJcEENiD2nMYrlQx5MWlQTJBttcqg`, // shorten for clarity
               },
             }
+          );
+          console.log(
+            `✅ Notified passenger ${passenger.Employee_Name} (${phone})`
           );
           notifiedCount++;
         } catch (err) {
           console.error(
-            `Failed to send WhatsApp message to ${phone}:`,
+            `❌ Failed to send WhatsApp message to ${phone}:`,
             err?.response?.data || err.message
           );
         }
@@ -97,8 +107,9 @@ export const startRideUpdatePassengerController = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: `Passengers for shift "${Journey_shift}" scheduled today have been notified.`,
-      passengerCount: notifiedCount,
+      message: `Passengers for shift "${Journey_shift}" checked. Notified today-scheduled passengers only.`,
+      notifiedCount,
+      skippedCount,
     });
   } catch (error) {
     return res.status(500).json({
