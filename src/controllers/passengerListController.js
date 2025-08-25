@@ -1,4 +1,4 @@
-// new
+
 // passengerListController.js
 import axios from "axios";
 import Driver from "../models/driverModel.js";
@@ -23,9 +23,6 @@ function toISTString(date) {
   if (!date) return "";
   return new Date(date).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
 }
-
-// ✅ Weekday map in lowercase 3-letter format
-const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export const sendPassengerList = async (req, res) => {
   console.log("🚀 [START] sendPassengerList API called.");
@@ -65,19 +62,8 @@ export const sendPassengerList = async (req, res) => {
     }
 
     // Step 5: Get shift block
-    // Step 5: Get shift block (case-insensitive)
-console.log("👉 Asset shift blocks available =", asset.passengers.map(b => b.shift));
-console.log("👉 Journey_shift =", journey.Journey_shift);
-
-const shiftBlock = asset.passengers.find(
-      (b) =>
-        String(b.shift || "")
-          .trim()
-          .toLowerCase() ===
-        String(journey.Journey_shift || "").trim().toLowerCase()
-    );
-
-console.log("👉 Step 5: ShiftBlock =", shiftBlock ? "✅ found" : "❌ not found");
+    const shiftBlock = asset.passengers.find((b) => b.shift === journey.Journey_shift);
+    console.log("👉 Step 5: ShiftBlock =", shiftBlock ? "✅ found" : "❌ not found");
     if (!shiftBlock || !Array.isArray(shiftBlock.passengers)) {
       await sendWhatsAppMessage(phoneNumber, "No passengers assigned.");
       return res.json({ success: true, message: "No passengers assigned." });
@@ -85,7 +71,8 @@ console.log("👉 Step 5: ShiftBlock =", shiftBlock ? "✅ found" : "❌ not fou
 
     // Step 6: Filtering logic (UTC)
     const nowUTC = new Date();
-    const today = WEEK_DAYS[nowUTC.getDay()]; // ✅ lowercase day
+    const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const today = WEEK_DAYS[nowUTC.getDay()];
     console.log("👉 Step 6: Today (UTC) =", today, "Current UTC =", nowUTC.toISOString());
 
     const boardedIds = new Set((journey.boardedPassengers || []).map((bp) => String(bp.passenger?._id || bp.passenger)));
@@ -93,9 +80,10 @@ console.log("👉 Step 5: ShiftBlock =", shiftBlock ? "✅ found" : "❌ not fou
     console.log("   Boarded IDs =", [...boardedIds]);
     console.log("   Missed IDs =", [...missedIds]);
 
+    const debug = [];
     const newlyMissed = [];
 
-    const rows = (shiftBlock.passengers || []).map((ps) => {
+    const rows = (shiftBlock.passengers || []).map((ps, idx) => {
       if (!ps.passenger) return null;
       const pid = ps.passenger._id.toString();
 
@@ -109,13 +97,10 @@ console.log("👉 Step 5: ShiftBlock =", shiftBlock ? "✅ found" : "❌ not fou
         newlyMissed.push(pid); // mark for DB update
       }
 
-      // ✅ Normalize wfoDays to lowercase 3-letter codes
       const normalizedDays = Array.isArray(ps.wfoDays)
-        ? ps.wfoDays.map((d) => d.trim().slice(0, 3).toLowerCase())
+        ? ps.wfoDays.map((d) => d.trim().slice(0, 3))
         : [];
-
-      // ✅ If wfoDays empty → treat as NOT scheduled
-      const includeToday = normalizedDays.length > 0 && normalizedDays.includes(today);
+      const includeToday = normalizedDays.includes(today);
 
       const included = includeToday && !boarded && !missed && !bufferEndPassed;
 
@@ -153,7 +138,7 @@ console.log("👉 Step 5: ShiftBlock =", shiftBlock ? "✅ found" : "❌ not fou
     // Step 9: Send WhatsApp message
     if (rows.length === 0) {
       await sendWhatsAppMessage(phoneNumber, "No passengers available today.");
-      return res.json({ success: true, message: "No passengers available today.", rows });
+      return res.json({ success: true, message: "No passengers available today.", rows, debug });
     }
 
     const watiPayload = {
@@ -177,14 +162,14 @@ console.log("👉 Step 5: ShiftBlock =", shiftBlock ? "✅ found" : "❌ not fou
     );
 
     console.log("✅ Step 10: WhatsApp sent successfully.");
-    return res.status(200).json({
-      success: true,
+    // return res.json({ success: true, message: "Passenger list sent via WhatsApp.", rows, debug, watiResponse: response.data });
+    return res.status(200).json({success: true,
       message: "Passenger list sent successfully via WhatsApp.",
-      data: response.data,
-    });
+      data: response.data})
 
   } catch (error) {
     console.error("❌ sendPassengerList failed:", error);
     return res.status(500).json({ success: false, message: "Internal error", error: error.message });
   }
 };
+ 
