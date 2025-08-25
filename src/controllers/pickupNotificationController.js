@@ -3,16 +3,7 @@ import Journey from "../models/JourneyModel.js";
 import { sendPickupConfirmationMessage } from "../utils/PickUpPassengerSendTem.js";
 import { sendOtherPassengerSameShiftUpdateMessage } from "../utils/InformOtherPassenger.js";
 import { storeJourneyNotifications } from "../utils/notificationService.js";
-
-// ✅ helper to normalize days
-const normalizeDays = (days) => {
-  if (!Array.isArray(days)) return [];
-  return days.map((d) => d.toString().trim().toLowerCase().slice(0, 3));
-};
-
-// ✅ get today (short format, lowercase)
-const getTodayShort = () =>
-  new Date().toLocaleDateString("en-US", { weekday: "short", timeZone: "Asia/Kolkata" }).toLowerCase();
+import { isScheduledToday } from "../utils/weekoffPassengerHelper.js";
 
 export const sendPickupConfirmation = async (req, res) => {
   try {
@@ -32,7 +23,6 @@ export const sendPickupConfirmation = async (req, res) => {
       });
     }
 
-    // ✅ Find asset that has this passenger
     const asset = await Asset.findOne({
       "passengers.passengers.passenger": { $exists: true },
     }).populate({
@@ -67,19 +57,14 @@ export const sendPickupConfirmation = async (req, res) => {
       });
     }
 
-    // ✅ Check schedule for picked passenger
-    const today = getTodayShort();
-    const pickedDays = normalizeDays(pickedPassenger.wfoDays);
-    const pickedScheduled = pickedPassenger.wfoDays == null || pickedDays.includes(today);
-
-    if (!pickedScheduled) {
+    if (!isScheduledToday(pickedPassenger.wfoDays)) {
+      console.log(`⏭️ Skipping pickup for ${pickedPassenger.Employee_Name} (not scheduled today)`);
       return res.status(200).json({
         success: false,
-        message: `Passenger ${pickedPassenger.Employee_Name} is not scheduled today (${today}).`,
+        message: `Passenger ${pickedPassenger.Employee_Name} is not scheduled today.`,
       });
     }
 
-    // ✅ Find active journey
     const journey = await Journey.findOne({ Asset: asset._id })
       .sort({ createdAt: -1 })
       .populate("boardedPassengers.passenger", "Employee_PhoneNumber Employee_Name");
@@ -88,7 +73,6 @@ export const sendPickupConfirmation = async (req, res) => {
       return res.status(404).json({ success: false, message: "No journey found for asset." });
     }
 
-    // ✅ Check already boarded
     const alreadyBoarded = journey.boardedPassengers.some(
       (bp) =>
         (bp.passenger.Employee_PhoneNumber || "").replace(/\D/g, "") === cleanedPhone
@@ -97,14 +81,12 @@ export const sendPickupConfirmation = async (req, res) => {
       return res.status(400).json({ success: false, message: "Passenger already boarded." });
     }
 
-    // ✅ Mark boarded
     journey.boardedPassengers.push({
       passenger: pickedPassenger._id,
       boardedAt: new Date(),
     });
     await journey.save();
 
-    // ✅ Store updated journey notifications
     try {
       if (shiftBlock) {
         await storeJourneyNotifications(journey._id, shiftBlock);
@@ -113,13 +95,11 @@ export const sendPickupConfirmation = async (req, res) => {
       console.error("storeJourneyNotifications error:", err);
     }
 
-    // ✅ Confirm to picked passenger (since scheduled today)
     const confirmation = await sendPickupConfirmationMessage(
       pickedPassenger.Employee_PhoneNumber,
       pickedPassenger.Employee_Name
     );
 
-    // ✅ Notify other shift passengers (only those scheduled today)
     const boardedSet = new Set(
       journey.boardedPassengers.map((bp) =>
         (bp.passenger.Employee_PhoneNumber || "").replace(/\D/g, "")
@@ -131,14 +111,13 @@ export const sendPickupConfirmation = async (req, res) => {
     for (const p of currentShiftPassengers) {
       if (!p?.Employee_PhoneNumber) continue;
 
-      // skip already boarded
       const phoneClean = p.Employee_PhoneNumber.replace(/\D/g, "");
       if (boardedSet.has(phoneClean)) continue;
 
-      // check schedule
-      const normalized = normalizeDays(p.wfoDays);
-      const isScheduled = p.wfoDays == null || normalized.includes(today);
-      if (!isScheduled) continue;
+      if (!isScheduledToday(p.wfoDays)) {
+        console.log(`⏭️ Not notifying ${p.Employee_Name} (not scheduled today)`);
+        continue;
+      }
 
       try {
         const notify = await sendOtherPassengerSameShiftUpdateMessage(

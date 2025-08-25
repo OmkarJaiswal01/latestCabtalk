@@ -9,16 +9,9 @@ import { sendOtherPassengerSameShiftUpdateMessage } from "../utils/InformOtherPa
 import { sendDropConfirmationMessage } from "../utils/dropConfirmationMsg.js";
 import { startRideUpdatePassengerController } from "../utils/rideStartUpdatePassenger.js";
 import { storeJourneyNotifications } from "../utils/notificationService.js";
+import { isScheduledToday } from "../utils/weekoffPassengerHelper.js";
 
 const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-/**
- * Normalize wfoDays to 3-letter lowercase format
- */
-const normalizeDays = (days) => {
-  if (!Array.isArray(days)) return [];
-  return days.map((d) => d.trim().slice(0, 3).toLowerCase());
-};
 
 /**
  * Create Journey
@@ -77,8 +70,6 @@ export const createJourney = asyncHandler(async (req, res) => {
   await asset.save();
 
   if (Journey_Type.toLowerCase() === "pickup") {
-    const today = WEEK_DAYS[new Date().getDay()].toLowerCase();
-
     const passengersForShift = [];
 
     for (const shift of asset.passengers) {
@@ -88,13 +79,12 @@ export const createJourney = asyncHandler(async (req, res) => {
         const passenger = sp.passenger;
         if (!passenger) continue;
 
-        const normalizedDays = normalizeDays(passenger.wfoDays);
-        const isScheduledToday =
-          passenger.wfoDays == null || normalizedDays.includes(today);
-
-        if (!isScheduledToday) continue;
-
-        passengersForShift.push(sp);
+        if (isScheduledToday(passenger.wfoDays)) {
+          console.log(`✅ Adding scheduled passenger ${passenger.Employee_Name}`);
+          passengersForShift.push(sp);
+        } else {
+          console.log(`⏭️ Skipping passenger ${passenger.Employee_Name} (not scheduled today)`);
+        }
       }
     }
 
@@ -254,19 +244,16 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
     await sendWhatsAppMessage(waId, "✅ Passenger confirmed. Thank you!");
 
     const jt = (journey.Journey_Type || "").toLowerCase();
-    const today = WEEK_DAYS[new Date().getDay()].toLowerCase();
 
     if (jt === "pickup") {
-      // Confirm pickup ONLY if scheduled today
-      const normalizedDays = normalizeDays(passenger.wfoDays);
-      const isScheduledToday =
-        passenger.wfoDays == null || normalizedDays.includes(today);
-
-      if (isScheduledToday) {
+      if (isScheduledToday(passenger.wfoDays)) {
+        console.log(`✅ Sending pickup confirmation to ${passenger.Employee_Name}`);
         await sendPickupConfirmationMessage(
           passenger.Employee_PhoneNumber,
           passenger.Employee_Name
         );
+      } else {
+        console.log(`⏭️ Skipping pickup confirmation for ${passenger.Employee_Name}`);
       }
 
       const boardedSet = new Set(
@@ -281,11 +268,10 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
         const pDoc = shiftPassenger.passenger;
         if (!pDoc?.Employee_PhoneNumber) continue;
 
-        const normalizedDays = normalizeDays(pDoc.wfoDays);
-        const isScheduledTodayOther =
-          pDoc.wfoDays == null || normalizedDays.includes(today);
-
-        if (!isScheduledTodayOther) continue;
+        if (!isScheduledToday(pDoc.wfoDays)) {
+          console.log(`⏭️ Skipping notify for ${pDoc.Employee_Name} (not scheduled today)`);
+          continue;
+        }
 
         const phoneClean = (pDoc.Employee_PhoneNumber || "").replace(/\D/g, "");
         if (!phoneClean || boardedSet.has(phoneClean)) continue;
@@ -306,16 +292,14 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
     }
 
     if (jt === "drop") {
-      // Confirm drop ONLY if scheduled today
-      const normalizedDays = normalizeDays(passenger.wfoDays);
-      const isScheduledToday =
-        passenger.wfoDays == null || normalizedDays.includes(today);
-
-      if (isScheduledToday) {
+      if (isScheduledToday(passenger.wfoDays)) {
+        console.log(`✅ Sending drop confirmation to ${passenger.Employee_Name}`);
         await sendDropConfirmationMessage(
           passenger.Employee_PhoneNumber,
           passenger.Employee_Name
         );
+      } else {
+        console.log(`⏭️ Skipping drop confirmation for ${passenger.Employee_Name}`);
       }
     }
   } catch (err) {
