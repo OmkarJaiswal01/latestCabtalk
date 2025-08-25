@@ -65,8 +65,19 @@ export const sendPassengerList = async (req, res) => {
     }
 
     // Step 5: Get shift block
-    const shiftBlock = asset.passengers.find((b) => b.shift === journey.Journey_shift);
-    console.log("👉 Step 5: ShiftBlock =", shiftBlock ? "✅ found" : "❌ not found");
+    // Step 5: Get shift block (case-insensitive)
+console.log("👉 Asset shift blocks available =", asset.passengers.map(b => b.shift));
+console.log("👉 Journey_shift =", journey.Journey_shift);
+
+const shiftBlock = asset.passengers.find(
+      (b) =>
+        String(b.shift || "")
+          .trim()
+          .toLowerCase() ===
+        String(journey.Journey_shift || "").trim().toLowerCase()
+    );
+
+console.log("👉 Step 5: ShiftBlock =", shiftBlock ? "✅ found" : "❌ not found");
     if (!shiftBlock || !Array.isArray(shiftBlock.passengers)) {
       await sendWhatsAppMessage(phoneNumber, "No passengers assigned.");
       return res.json({ success: true, message: "No passengers assigned." });
