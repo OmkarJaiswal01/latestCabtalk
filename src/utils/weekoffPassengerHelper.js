@@ -1,5 +1,5 @@
 // utils/scheduleHelper.js
-const WEEK_DAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 /**
  * Normalize array of days to ["mon","tue",...] lowercase 3-letter format
