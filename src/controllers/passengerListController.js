@@ -1,5 +1,3 @@
-
-
 // new
 // passengerListController.js
 import axios from "axios";
@@ -25,6 +23,9 @@ function toISTString(date) {
   if (!date) return "";
   return new Date(date).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
 }
+
+// ✅ Weekday map in lowercase 3-letter format
+const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export const sendPassengerList = async (req, res) => {
   console.log("🚀 [START] sendPassengerList API called.");
@@ -73,8 +74,7 @@ export const sendPassengerList = async (req, res) => {
 
     // Step 6: Filtering logic (UTC)
     const nowUTC = new Date();
-    const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    const today = WEEK_DAYS[nowUTC.getDay()];
+    const today = WEEK_DAYS[nowUTC.getDay()]; // ✅ lowercase day
     console.log("👉 Step 6: Today (UTC) =", today, "Current UTC =", nowUTC.toISOString());
 
     const boardedIds = new Set((journey.boardedPassengers || []).map((bp) => String(bp.passenger?._id || bp.passenger)));
@@ -82,10 +82,9 @@ export const sendPassengerList = async (req, res) => {
     console.log("   Boarded IDs =", [...boardedIds]);
     console.log("   Missed IDs =", [...missedIds]);
 
-    const debug = [];
     const newlyMissed = [];
 
-    const rows = (shiftBlock.passengers || []).map((ps, idx) => {
+    const rows = (shiftBlock.passengers || []).map((ps) => {
       if (!ps.passenger) return null;
       const pid = ps.passenger._id.toString();
 
@@ -99,10 +98,13 @@ export const sendPassengerList = async (req, res) => {
         newlyMissed.push(pid); // mark for DB update
       }
 
+      // ✅ Normalize wfoDays to lowercase 3-letter codes
       const normalizedDays = Array.isArray(ps.wfoDays)
-        ? ps.wfoDays.map((d) => d.trim().slice(0, 3))
+        ? ps.wfoDays.map((d) => d.trim().slice(0, 3).toLowerCase())
         : [];
-      const includeToday = normalizedDays.includes(today);
+
+      // ✅ If wfoDays empty → treat as NOT scheduled
+      const includeToday = normalizedDays.length > 0 && normalizedDays.includes(today);
 
       const included = includeToday && !boarded && !missed && !bufferEndPassed;
 
@@ -140,7 +142,7 @@ export const sendPassengerList = async (req, res) => {
     // Step 9: Send WhatsApp message
     if (rows.length === 0) {
       await sendWhatsAppMessage(phoneNumber, "No passengers available today.");
-      return res.json({ success: true, message: "No passengers available today.", rows, debug });
+      return res.json({ success: true, message: "No passengers available today.", rows });
     }
 
     const watiPayload = {
@@ -164,14 +166,14 @@ export const sendPassengerList = async (req, res) => {
     );
 
     console.log("✅ Step 10: WhatsApp sent successfully.");
-    // return res.json({ success: true, message: "Passenger list sent via WhatsApp.", rows, debug, watiResponse: response.data });
-    return res.status(200).json({success: true,
+    return res.status(200).json({
+      success: true,
       message: "Passenger list sent successfully via WhatsApp.",
-      data: response.data})
+      data: response.data,
+    });
 
   } catch (error) {
     console.error("❌ sendPassengerList failed:", error);
     return res.status(500).json({ success: false, message: "Internal error", error: error.message });
   }
 };
- 
