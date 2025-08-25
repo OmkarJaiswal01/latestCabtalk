@@ -1,7 +1,8 @@
+// utils/rideStartUpdatePassenger.js
 import Asset from "../models/assetModel.js";
 import Driver from "../models/driverModel.js";
 import axios from "axios";
-import { isScheduledToday } from "../utils/weekoffPassengerHelper.js"; // ✅ use shared helper
+import { isScheduledToday } from "./weekoffPassengerHelper.js"; // use the shared helper
 
 export const startRideUpdatePassengerController = async (req, res) => {
   try {
@@ -23,7 +24,7 @@ export const startRideUpdatePassengerController = async (req, res) => {
       });
     }
 
-    // 🔎 find asset with passengers populated
+    // 🔎 find asset with passengers populated (include passenger.wfoDays)
     const asset = await Asset.findOne({ driver: driver._id }).populate({
       path: "passengers.passengers.passenger",
       model: "Passenger",
@@ -60,8 +61,11 @@ export const startRideUpdatePassengerController = async (req, res) => {
         continue;
       }
 
+      // Prefer entry-level wfoDays if set (assignment-level), otherwise fallback to passenger doc's wfoDays
+      const effectiveWfoDays = Array.isArray(entry.wfoDays) && entry.wfoDays.length ? entry.wfoDays : passenger.wfoDays;
+
       // ✅ check if scheduled today using helper
-      if (!isScheduledToday(passenger.wfoDays)) {
+      if (!isScheduledToday(effectiveWfoDays)) {
         console.log(
           `⏭️ Skipped passenger ${passenger.Employee_Name} (${passenger.Employee_PhoneNumber}) - not scheduled today.`
         );
@@ -70,7 +74,7 @@ export const startRideUpdatePassengerController = async (req, res) => {
       }
 
       // format phone + name
-      const phone = passenger.Employee_PhoneNumber.replace(/\D/g, "");
+      const phone = (passenger.Employee_PhoneNumber || "").replace(/\D/g, "");
       const rawName = passenger.Employee_Name || "Passenger";
       const [firstRaw] = String(rawName).trim().split(/\s+/);
       const firstName = firstRaw || rawName;
@@ -86,7 +90,7 @@ export const startRideUpdatePassengerController = async (req, res) => {
           {
             headers: {
               "content-type": "application/json-patch+json",
-              Authorization: `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI0YmM2MmFkNC04NTQ3LTRkYzItOTc0Ni0wNmRkMjZiODYzNmMiLCJ1bmlxdWVfbmFtZSI6Im9ta2FyLmphaXN3YWxAZ3hpbmV0d29ya3MuY29tIiwibmFtZWlkIjoib21rYXIuamFpc3dhbEBneGluZXR3b3Jrcy5jb20iLCJlbWFpbCI6Im9ta2FyLmphaXN3YWxAZ3hpbmV0d29ya3MuY29tIiwiYXV0aF90aW1lIjoiMDYvMzAvMjAyNSAwNzozNzoxNSIsInRlbmFudF9pZCI6IjM4ODQyOCIsImRiX25hbWUiOiJtdC1wcm9kLVRlbmFudHMiLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOiJBRE1JTklTVFJBVE9SIiwiZXhwIjoyNTM0MDIzMDA4MDAsImlzcyI6IkNsYXJlX0FJIiwiYXVkIjoiQ2xhcmVfQUkifQ.dr6x_b4olu0EL6oJcEENiD2nMYrlQx5MWlQTJBttcqg`, // ✅ moved to env variable
+              Authorization: `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI0YmM2MmFkNC04NTQ3LTRkYzItOTc0Ni0wNmRkMjZiODYzNmMiLCJ1bmlxdWVfbmFtZSI6Im9ta2FyLmphaXN3YWxAZ3hpbmV0d29ya3MuY29tIiwibmFtZWlkIjoib21rYXIuamFpc3dhbEBneGluZXR3b3Jrcy5jb20iLCJlbWFpbCI6Im9ta2FyLmphaXN3YWxAZ3hpbmV0d29ya3MuY29tIiwiYXV0aF90aW1lIjoiMDYvMzAvMjAyNSAwNzozNzoxNSIsInRlbmFudF9pZCI6IjM4ODQyOCIsImRiX25hbWUiOiJtdC1wcm9kLVRlbmFudHMiLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOiJBRE1JTklTVFJBVE9SIiwiZXhwIjoyNTM0MDIzMDA4MDAsImlzcyI6IkNsYXJlX0FJIiwiYXVkIjoiQ2xhcmVfQUkifQ.dr6x_b4olu0EL6oJcEENiD2nMYrlQx5MWlQTJBttcqg`,
             },
           }
         );

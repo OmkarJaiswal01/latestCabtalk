@@ -1,3 +1,4 @@
+// controllers/journeyController.js
 import Journey from "../models/JourneyModel.js";
 import Asset from "../models/assetModel.js";
 import Driver from "../models/driverModel.js";
@@ -31,6 +32,7 @@ export const createJourney = asyncHandler(async (req, res) => {
       .json({ message: "No driver found with this vehicle number." });
   }
 
+  // populate passengers with passenger.wfoDays (we still prefer shift-level wfoDays later)
   const asset = await Asset.findOne({ driver: driver._id }).populate({
     path: "passengers.passengers.passenger",
     model: "Passenger",
@@ -79,7 +81,10 @@ export const createJourney = asyncHandler(async (req, res) => {
         const passenger = sp.passenger;
         if (!passenger) continue;
 
-        if (isScheduledToday(passenger.wfoDays)) {
+        // Prefer shift-entry wfoDays (sp.wfoDays) if present; otherwise fall back to passenger.wfoDays
+        const effectiveWfoDays = Array.isArray(sp.wfoDays) && sp.wfoDays.length ? sp.wfoDays : passenger.wfoDays;
+
+        if (isScheduledToday(effectiveWfoDays)) {
           console.log(`✅ Adding scheduled passenger ${passenger.Employee_Name}`);
           passengersForShift.push(sp);
         } else {
@@ -152,6 +157,9 @@ export const getJourneys = async (req, res) => {
   }
 };
 
+/**
+ * WATI webhook handler for interactive lists (board passenger confirmations)
+ */
 export const handleWatiWebhook = asyncHandler(async (req, res) => {
   res.sendStatus(200);
 
@@ -159,10 +167,11 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
     if (req.body.text != null) return;
 
     const { id: eventId, type, waId, listReply } = req.body;
-    if (type !== "interactive" || !listReply?.title || !/\d{12}$/.test(listReply.title))
+    if (type !== "interactive" || !listReply?.title || !/\d{10,12}$/.test(listReply.title))
       return;
 
-    const passengerPhone = listReply.title.match(/(\d{12})$/)[0];
+    // Extract phone (last 10-12 digits)
+    const passengerPhone = listReply.title.match(/(\d{10,12})$/)[0];
     const driver = await Driver.findOne({ phoneNumber: waId });
     if (!driver) return;
 
@@ -173,7 +182,7 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
         populate: {
           path: "passengers.passengers.passenger",
           model: "Passenger",
-          select: "Employee_ID Employee_Name Employee_PhoneNumber wfoDays",
+          select: "Employee_Name Employee_PhoneNumber wfoDays",
         },
       })
       .populate(
@@ -198,7 +207,10 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
     }
 
     const thisShift = journey.Asset.passengers.find((shift) =>
-      shift.passengers.some((s) => s.passenger._id.equals(passenger._id))
+      shift.passengers.some((s) => {
+        const pid = s.passenger?._id ? String(s.passenger._id) : String(s.passenger);
+        return pid === String(passenger._id);
+      })
     );
 
     if (!thisShift) {
@@ -217,9 +229,9 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
       return;
     }
 
-    const cleanedPhone = passengerPhone.replace(/\D/g, "");
+    const cleanedPhone = (passengerPhone || "").replace(/\D/g, "");
     const alreadyBoarded = journey.boardedPassengers.some((bp) => {
-      const bpPhone =(bp.passenger.Employee_PhoneNumber || "").replace(/\D/g, "");
+      const bpPhone = (bp.passenger.Employee_PhoneNumber || "").replace(/\D/g, "");
       return bpPhone === cleanedPhone;
     });
 
@@ -245,8 +257,18 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
 
     const jt = (journey.Journey_Type || "").toLowerCase();
 
+    // find the exact shift-entry for the boarding passenger to prefer entry-level wfoDays
+    const boardingEntry = thisShift.passengers.find((s) => {
+      const pid = s.passenger?._id ? String(s.passenger._id) : String(s.passenger);
+      return pid === String(passenger._id);
+    });
+
+    const boardingEffectiveWfoDays = (boardingEntry && Array.isArray(boardingEntry.wfoDays) && boardingEntry.wfoDays.length)
+      ? boardingEntry.wfoDays
+      : passenger.wfoDays;
+
     if (jt === "pickup") {
-      if (isScheduledToday(passenger.wfoDays)) {
+      if (isScheduledToday(boardingEffectiveWfoDays)) {
         console.log(`✅ Sending pickup confirmation to ${passenger.Employee_Name}`);
         await sendPickupConfirmationMessage(
           passenger.Employee_PhoneNumber,
@@ -263,12 +285,15 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
       );
       boardedSet.add(cleanedPhone);
 
-      // Notify other passengers (ONLY scheduled today)
+      // Notify other passengers (ONLY scheduled today) - prefer entry-level wfoDays for each entry
       for (const shiftPassenger of thisShift.passengers) {
-        const pDoc = shiftPassenger.passenger;
+        const pEntry = shiftPassenger;
+        const pDoc = pEntry.passenger;
         if (!pDoc?.Employee_PhoneNumber) continue;
 
-        if (!isScheduledToday(pDoc.wfoDays)) {
+        const effectiveWfoDays = Array.isArray(pEntry.wfoDays) && pEntry.wfoDays.length ? pEntry.wfoDays : pDoc.wfoDays;
+
+        if (!isScheduledToday(effectiveWfoDays)) {
           console.log(`⏭️ Skipping notify for ${pDoc.Employee_Name} (not scheduled today)`);
           continue;
         }
@@ -292,7 +317,7 @@ export const handleWatiWebhook = asyncHandler(async (req, res) => {
     }
 
     if (jt === "drop") {
-      if (isScheduledToday(passenger.wfoDays)) {
+      if (isScheduledToday(boardingEffectiveWfoDays)) {
         console.log(`✅ Sending drop confirmation to ${passenger.Employee_Name}`);
         await sendDropConfirmationMessage(
           passenger.Employee_PhoneNumber,

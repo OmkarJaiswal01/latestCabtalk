@@ -1,10 +1,10 @@
-
-// passengerListController.js
+// controllers/passengerListController.js
 import axios from "axios";
 import Driver from "../models/driverModel.js";
 import Asset from "../models/assetModel.js";
 import Journey from "../models/JourneyModel.js";
 import { sendWhatsAppMessage } from "../utils/whatsappHelper.js";
+import { isScheduledToday } from "../utils/weekoffPassengerHelper.js";
 
 // Utility: format passenger title
 function formatTitle(name, phoneNumber) {
@@ -18,7 +18,7 @@ function formatTitle(name, phoneNumber) {
   return title;
 }
 
-// Utility: UTC → IST string (for display/logs only) 
+// Utility: UTC → IST string (for display/logs only)
 function toISTString(date) {
   if (!date) return "";
   return new Date(date).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
@@ -47,7 +47,7 @@ export const sendPassengerList = async (req, res) => {
     const asset = await Asset.findOne({ driver: driver._id }).populate({
       path: "passengers.passengers.passenger",
       model: "Passenger",
-      select: "Employee_Name Employee_PhoneNumber Employee_Address",
+      select: "Employee_Name Employee_PhoneNumber Employee_Address wfoDays",
     });
     console.log("👉 Step 3: Asset found =", asset?._id || "❌ none");
     if (!asset) {
@@ -97,10 +97,10 @@ export const sendPassengerList = async (req, res) => {
         newlyMissed.push(pid); // mark for DB update
       }
 
-      const normalizedDays = Array.isArray(ps.wfoDays)
-        ? ps.wfoDays.map((d) => d.trim().slice(0, 3))
-        : [];
-      const includeToday = normalizedDays.includes(today);
+      // Determine effective wfoDays: prefer shift-level (ps.wfoDays) else passenger doc
+      const effectiveWfoDays = Array.isArray(ps.wfoDays) && ps.wfoDays.length ? ps.wfoDays : (ps.passenger?.wfoDays || []);
+
+      const includeToday = isScheduledToday(effectiveWfoDays);
 
       const included = includeToday && !boarded && !missed && !bufferEndPassed;
 
@@ -111,7 +111,7 @@ export const sendPassengerList = async (req, res) => {
         : boarded
         ? "✅ already boarded"
         : !includeToday
-        ? `❌ not scheduled today (${today})`
+        ? `❌ not scheduled today (checked against shift/passenger wfoDays)`
         : "✅ included";
 
       console.log(`   Passenger ${ps.passenger.Employee_Name} (${pid}): ${reason}`);
@@ -162,14 +162,14 @@ export const sendPassengerList = async (req, res) => {
     );
 
     console.log("✅ Step 10: WhatsApp sent successfully.");
-    // return res.json({ success: true, message: "Passenger list sent via WhatsApp.", rows, debug, watiResponse: response.data });
-    return res.status(200).json({success: true,
+    return res.status(200).json({
+      success: true,
       message: "Passenger list sent successfully via WhatsApp.",
-      data: response.data})
+      data: response.data
+    });
 
   } catch (error) {
     console.error("❌ sendPassengerList failed:", error);
     return res.status(500).json({ success: false, message: "Internal error", error: error.message });
   }
 };
- 
